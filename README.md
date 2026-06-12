@@ -2,6 +2,8 @@
 
 > See also: [How does this compare to the official claude-md-improver?](docs/comparison-vs-claude-md-improver.md)
 
+**TL;DR install**: `curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — see [Quick install](#quick-install-one-liner) for mode options.
+
 # rules-architect
 
 > Self-improving rule architecture for Claude Code. Install 4 hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
