@@ -4,6 +4,8 @@
 
 > 另见：[与官方 claude-md-improver 的对比](docs/comparison-vs-claude-md-improver.zh.md)
 
+**一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 模式选项详见[一键安装](#一键安装)节。
+
 > Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
 
 ## 安装包含什么
