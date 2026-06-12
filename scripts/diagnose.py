@@ -443,15 +443,28 @@ def scan_l5_lessons(lessons_path: str = None) -> dict:
 def estimate_token_injection() -> int:
     """Rough token cost of every-session L1 + L3 injections."""
     total_bytes = 0
+    # Standard CC global files
     paths = [
         Path.home() / ".claude" / "CLAUDE.md",
         Path.home() / ".claude" / "RTK.md",
-        Path.cwd() / "CLAUDE.md",
-        Path.cwd() / "CLAUDE-personal.md",
-        Path.cwd() / "CLAUDE-company.md",
-        Path.cwd() / "workflow.md",
-        Path.cwd() / "business-map.md",
     ]
+    # Project root: any CLAUDE*.md at cwd top-level
+    cwd = Path.cwd()
+    for p in cwd.glob("CLAUDE*.md"):
+        if p.is_file():
+            paths.append(p)
+    # User can add project-specific files via env var (comma-separated relative paths)
+    # E.g.  RA_TOKEN_EXTRA_PATHS="workflow.md,business-map.md,docs/ai/notes.md"
+    extra = os.environ.get("RA_TOKEN_EXTRA_PATHS", "")
+    for s in extra.split(","):
+        s = s.strip()
+        if not s:
+            continue
+        rel = Path(s)
+        if not rel.is_absolute():
+            rel = cwd / rel
+        if rel.exists():
+            paths.append(rel)
     for p in paths:
         if p.exists():
             try:

@@ -37,9 +37,11 @@ DEFAULT_PATHS = [
     "**/CLAUDE.md",
     "**/CLAUDE-personal.md",
     "**/CLAUDE-company.md",
-    "**/workflow.md",
-    "**/business-map.md",
+    "**/AGENTS.md",
+    "**/GEMINI.md",
 ]
+# Project-specific rule docs (e.g. your team's workflow.md) can be added at
+# install time via the --paths flag, comma-separated globs.
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "rules" / "rule-intake.md.tmpl"

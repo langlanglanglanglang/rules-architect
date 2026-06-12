@@ -34,7 +34,7 @@ This skill provides **3 layers of interception** at rule-writing moment, forcing
 | **L1 memory** | `~/.claude/projects/.../memory/*.md` | Index injected every session; details on demand | ~3k index |
 | **L2 path-scoped** | `.claude/rules/*.md` with frontmatter `paths:` | Edit matching file → auto-inject | 0 startup |
 | **L3 CLAUDE.md** | `CLAUDE.md` + `@import` chain | Session start, fully loaded | 40k+ |
-| **L5 team lessons** | Repo `docs/ai/lessons.md` | Manual or cyj-todo-style triggered | 0 (on demand) |
+| **L5 team lessons** | Repo `docs/ai/lessons.md` | Manual or workflow-triggered | 0 (on demand) |
 
 ## 5-Question Placement SOP
 
