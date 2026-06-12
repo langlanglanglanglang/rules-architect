@@ -6,7 +6,7 @@
 
 **一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 模式选项详见[一键安装](#一键安装)节。
 
-> Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
+> Claude Code 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
 
 ## 安装包含什么
 
@@ -16,7 +16,6 @@
 | 1 个 path-scoped rule (`rule-intake.md`) | 编辑规则文件时注入 SOP | ✅ |
 | `CLAUDE-personal.md` §六 模板 | 升级 / 退役 / 团队同步 流程 | ✅ |
 | `memory_sync.py` | 推送 memory → 团队 lessons（单向） | ✅ 参数化 |
-| `cleanup_hook.py` | SessionStart 清理（lock TTL + audit 轮转） | ✅ |
 | `examples/` | 项目特定规则示例（仅参考） | 不会安装 |
 
 ## 为什么需要它
@@ -119,8 +118,8 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 | 你本地改过的文件 | ✋ hash 不一致 → 跳过（不覆盖、不删除） |
 
 本 skill **加了什么**（全部跟踪到 `~/.claude/.rules-architect-manifest.json`）：
-- `~/.claude/settings.json` 加 5 个 hook 入口（先备份 `.bak.<ts>`）
-- `~/.claude/hooks/` 加 5 个 hook 脚本
+- `~/.claude/settings.json` 加 3 个 hook 入口（先备份 `.bak.<ts>`）
+- `~/.claude/hooks/` 加 3 个 hook 脚本
 - 模式 C / A：`<project>/.claude/rules/rule-intake.md`
 - 模式 A 独有：`<project>/CLAUDE-personal.md` 加 §六 节（marker 保护，便于精确移除）
 
@@ -192,7 +191,7 @@ python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
 ## Q&A
 
 **Q：hook 会拖慢 CC 吗？**
-A：每个 hook ~10-20ms；4 个合计 < 100ms。dedupe 保证同 reminder 一个会话只发一次。
+A：每个 hook ~10-20ms；3 个合计 < 100ms。dedupe 保证同 reminder 一个会话只发一次。
 
 **Q：我已经装了别的 hook 怎么办？**
 A：`install_hooks.py` 做 deep-merge 含冲突检测。同 matcher 下已有 hook 时提示你选 append / skip / replace。
