@@ -4,6 +4,41 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.0] — 2026-06-12
+
+### BREAKING CHANGES
+
+- **Core hook set reduced from 5 to 3** (universal SOP-injection + base infra
+  only): `memory_intake_check`, `rule_intake_reminder`, `cleanup_hook`.
+- **`error_recovery_checkpoint` and `dangerous_branch_reminder` moved to
+  `examples/`** — they encode individual workflow preferences (preferred
+  reporting cadence, team-specific protected branches) rather than universal
+  patterns. Existing v1.x installs that want them retained should fork from
+  `examples/` and register manually.
+
+### Design philosophy
+
+This release clarifies the boundary between:
+- **What the skill installs by default**: only hooks that implement the
+  skill's own methodology (5-Q SOP injection) and base infrastructure
+  (cleanup).
+- **What lives in `examples/`**: opinionated workflow hooks the user can
+  fork. Documentation now explicitly addresses "this is opinionated, not
+  universal" for each opt-in.
+
+### Upgrading from 1.x
+
+- Run `uninstall.py` then re-install with `install_hooks.py` (v2.0.0).
+- If you relied on the 2 removed hooks: copy them from `examples/` into
+  `~/.claude/hooks/` and add matching entries to `~/.claude/settings.json`.
+
+### Other changes
+
+- Updated `diagnose.py` `GENERIC_HOOKS` set + grading thresholds.
+- Updated `tests/integration/sandbox_install.sh` expected hook list.
+- Updated `templates/settings-snippet.json.tmpl` to reflect 3-hook layout.
+- Documentation overhaul: README (English + 中文), SKILL.md, comparison doc.
+
 ## [1.0.0] — 2026-06-12
 
 Initial release.

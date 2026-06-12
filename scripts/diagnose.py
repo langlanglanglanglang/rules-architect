@@ -70,11 +70,13 @@ def detect_cc_version() -> str:
 
 
 # === L0: Hooks scan ===
+# Core generic hooks (5-Q SOP injection + base infrastructure).
+# error_recovery_checkpoint / dangerous_branch_reminder were removed in v2.0.0
+# — they encode individual workflow preferences, not universal patterns.
+# See examples/ for opt-in versions.
 GENERIC_HOOKS = {
-    "error_recovery_checkpoint.py",
     "memory_intake_check.py",
     "rule_intake_reminder.py",
-    "dangerous_branch_reminder.py",
     "cleanup_hook.py",
 }
 
@@ -136,14 +138,14 @@ def scan_l0_hooks() -> dict:
 
     if generic_present == 0:
         grade = "F"
-    elif generic_present < 2:
+    elif generic_present == 1:
         grade = "D"
-    elif generic_present < 4:
+    elif generic_present == 2:
         grade = "C"
-    elif generic_present == 4:
-        grade = "B"
-    else:
+    elif generic_present == 3:
         grade = "A"
+    else:
+        grade = "A"   # >3 means extra custom hooks installed
 
     return {
         "grade": grade,

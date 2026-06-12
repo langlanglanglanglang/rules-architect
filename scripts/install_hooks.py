@@ -42,11 +42,11 @@ from typing import Optional
 SKILL_VERSION = "1.0.0"
 MIN_CC_VERSION = "1.5.0"   # UserPromptSubmit hook required
 
+# Core hooks: SOP injection + base infrastructure.
+# Individual workflow preferences (error_recovery, dangerous_branch, etc) live
+# in examples/ — copy + adapt for your own setup, then register manually or
+# via your own install script.
 HOOK_TEMPLATES = [
-    ("error_recovery_checkpoint.py", {
-        "event": "PostToolUse",
-        "matcher": "Edit|Write|Bash|MultiEdit",
-    }),
     ("memory_intake_check.py", {
         "event": "PreToolUse",
         "matcher": "Write|Edit|MultiEdit",
@@ -54,10 +54,6 @@ HOOK_TEMPLATES = [
     ("rule_intake_reminder.py", {
         "event": "UserPromptSubmit",
         "matcher": "*",
-    }),
-    ("dangerous_branch_reminder.py", {
-        "event": "PreToolUse",
-        "matcher": "Bash",
     }),
     ("cleanup_hook.py", {
         "event": "SessionStart",
@@ -497,19 +493,12 @@ def smoke_test_hook(path: Path, sample_input: dict) -> bool:
 
 def smoke_test_all() -> bool:
     samples = {
-        "error_recovery_checkpoint.py": {
-            "tool_name": "Edit", "tool_input": {},
-            "tool_response": {"is_error": True, "content": [{"type": "text", "text": "Error: x"}]},
-        },
         "memory_intake_check.py": {
             "session_id": "smoke",
             "tool_input": {"file_path": "/x/memory/feedback_y.md"},
         },
         "rule_intake_reminder.py": {
             "session_id": "smoke", "prompt": "test message",
-        },
-        "dangerous_branch_reminder.py": {
-            "session_id": "smoke", "tool_input": {"command": "ls"},
         },
         "cleanup_hook.py": {},
     }
@@ -539,8 +528,10 @@ def print_content_preservation_summary(backup_path: Optional[str]) -> None:
     print("   ✋ Existing settings.json entries — deep-merge preserves everything else")
     print()
     print("   ⭐ Changes (all tracked in manifest):")
-    print("      + up to 5 generic hook scripts in ~/.claude/hooks/")
-    print("      + up to 5 hook entries in ~/.claude/settings.json")
+    print("      + 3 core hook scripts in ~/.claude/hooks/")
+    print("      + 3 hook entries in ~/.claude/settings.json")
+    print("        (memory_intake_check / rule_intake_reminder / cleanup_hook)")
+    print("        For opt-in workflow hooks, see examples/")
     if backup_path:
         print(f"      → settings.json backed up: {backup_path}")
     print()

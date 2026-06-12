@@ -1,3 +1,23 @@
+
+## ⭐ Opt-in workflow hooks (moved here in v2.0.0)
+
+The following were **shipped by default in v1.x** but moved to `examples/` in v2.0.0
+because they encode personal / team workflow preferences, not universal patterns:
+
+| File | Why opt-in |
+|---|---|
+| `error_recovery_checkpoint.py.example` | "Force a 3-line recovery report" is a personal feedback-cadence preference. Some users prefer terse retries instead. |
+| `dangerous_branch_reminder.py.example` | Protected branch list varies wildly between teams (`develop\|test\|master` vs `main` vs trunk-based with no protection). The hook hard-codes a team's git flow. |
+
+To use:
+```bash
+cp examples/error_recovery_checkpoint.py.example ~/.claude/hooks/error_recovery_checkpoint.py
+chmod +x ~/.claude/hooks/error_recovery_checkpoint.py
+# Then register in ~/.claude/settings.json under PostToolUse with matcher "Edit|Write|Bash|MultiEdit"
+```
+
+Or fork into your project and have a custom install script handle them.
+
 # rules-architect examples
 
 These are **NOT installed** by the skill. They demonstrate how to extend the

@@ -211,7 +211,7 @@ def print_uninstall_preservation_summary() -> None:
     print("   ✋ Your L1 memory files                — entirely yours, never deleted")
     print("   ✋ Your CLAUDE.md                       — never touched")
     print("   ✋ Your CLAUDE-personal.md outside §六  — §一~§五 (and others) preserved")
-    print("   ✋ Other hooks in settings.json         — only our 5 entries removed")
+    print("   ✋ Other hooks in settings.json         — only our 3 entries removed")
     print("   ✋ Other .claude/rules/*.md             — only rule-intake.md removed")
     print()
     print("   Files you modified locally (hash mismatch) → skipped with warning, never deleted.")

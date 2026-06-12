@@ -97,11 +97,16 @@ User customizes:
 
 ## What This Skill Provides
 
-**4 generic hooks (parametrized + self-contained reminders)**:
-- `error_recovery_checkpoint.py` — tool errors → force 3-line recovery report
+**3 core hooks (universal, installed by default)**:
 - `memory_intake_check.py` — writing to memory → inject 5-Q SOP
 - `rule_intake_reminder.py` — user msg has rule keywords → inject 5-Q SOP
-- `dangerous_branch_reminder.py` — git checkout to protected branches → soft reminder
+- `cleanup_hook.py` — SessionStart cleanup (lock TTL + audit rotation)
+
+**Opt-in hooks (in `examples/`, fork + customize)**:
+- `error_recovery_checkpoint.py.example` — force 3-line recovery on tool error
+- `dangerous_branch_reminder.py.example` — checkout protected branch warning
+- `mr_created_reminder.py.example` — codeup MCP MR → status summary
+- See `examples/extension-hook-skeleton.py` to write your own from scratch
 
 **1 path-scoped rule**:
 - `.claude/rules/rule-intake.md` — editing any rule file → inject 5-Q SOP

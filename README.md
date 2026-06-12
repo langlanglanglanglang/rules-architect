@@ -10,7 +10,7 @@
 
 | Component | Purpose | Generic? |
 |---|---|---|
-| 4 hooks | Real-time interception at rule-writing moment | ✅ Parametrized |
+| 3 core hooks | SOP injection + base infrastructure (memory_intake / rule_intake / cleanup) | ✅ Universal |
 | 1 path-scoped rule (`rule-intake.md`) | Inject SOP when editing rule files | ✅ |
 | §六 template for `CLAUDE-personal.md` | Upgrade / retire / team sync flows | ✅ |
 | `memory_sync.py` | Push memory → team lessons (single direction) | ✅ Parametrized |
@@ -26,6 +26,24 @@ Default CC behavior: every nuance gets dumped to **L1 memory** because it's the 
 - Hook-pluckable rules left in memory keep getting forgotten
 
 This skill provides **3 layers of real-time interception** at the rule-writing moment.
+
+
+## Design philosophy: opinionated vs. universal
+
+This skill ships **only 3 core hooks** that encode the skill's methodology (5-Q SOP injection + base infrastructure) — not individual workflow preferences. Per-user workflow hooks (e.g. `error_recovery_checkpoint`, `dangerous_branch_reminder`) live in `examples/` for you to fork and customize.
+
+**Universal (installed by default)**:
+- `memory_intake_check.py` — intercepts memory writes with 5-Q SOP
+- `rule_intake_reminder.py` — intercepts user rule keywords with 5-Q SOP
+- `cleanup_hook.py` — SessionStart cleanup (lock TTL + audit rotation)
+
+**Opinionated (in `examples/`, copy + adapt)**:
+- `error_recovery_checkpoint.py.example` — force 3-line recovery report on tool error
+- `dangerous_branch_reminder.py.example` — warn on `git checkout <protected branch>`
+- `mr_created_reminder.py.example` — codeup MCP MR created → status summary
+- `extension-hook-skeleton.py` — minimal template for your own hook
+
+Migration of your existing memory entries to per-user hooks is handled by `install_hooks.py`'s interactive flow (after installing core 3) — see "Memory migration" section below.
 
 ## Requirements
 

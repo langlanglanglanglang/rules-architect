@@ -10,7 +10,7 @@
 
 | 组件 | 用途 | 通用？ |
 |---|---|---|
-| 4 个 hook | 规则写入瞬间实时拦截 | ✅ 已参数化 |
+| 3 个核心 hook | SOP 注入 + 基础设施（memory_intake / rule_intake / cleanup） | ✅ 通用 |
 | 1 个 path-scoped rule (`rule-intake.md`) | 编辑规则文件时注入 SOP | ✅ |
 | `CLAUDE-personal.md` §六 模板 | 升级 / 退役 / 团队同步 流程 | ✅ |
 | `memory_sync.py` | 推送 memory → 团队 lessons（单向） | ✅ 参数化 |
@@ -26,6 +26,24 @@ CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。
 - 适合做 hook 的规则被留在 memory，反复忘掉
 
 这套 skill 提供 **3 层规则写入瞬间的实时拦截**。
+
+
+## 设计哲学：通用 vs 个人偏好
+
+本 skill **只默认装 3 个核心 hook**，编码的是 skill 方法论（5 问 SOP 注入 + 基础设施），**不**编码个人工作流偏好。个人工作流 hook（如 `error_recovery_checkpoint` / `dangerous_branch_reminder`）放在 `examples/`，需要时 fork + 改。
+
+**通用（默认装）**：
+- `memory_intake_check.py` — 拦截 memory 写入，注入 5 问 SOP
+- `rule_intake_reminder.py` — 拦截用户规则关键词，注入 5 问 SOP
+- `cleanup_hook.py` — SessionStart 清理（lock TTL + audit 轮转）
+
+**个人偏好（在 `examples/`，按需 fork）**：
+- `error_recovery_checkpoint.py.example` — tool 错误时强制三行汇报
+- `dangerous_branch_reminder.py.example` — `git checkout <受保护分支>` 提醒
+- `mr_created_reminder.py.example` — codeup MCP MR 创建时输出汇总
+- `extension-hook-skeleton.py` — 自定义 hook 起步模板
+
+把你**自己已有**的 memory 规则升级到 hook，由 `install_hooks.py` 装好核心 3 hook 后的交互流程处理。
 
 ## 要求
 

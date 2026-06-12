@@ -73,11 +73,12 @@ echo
 
 # === Step 3: Verify all 5 hooks installed ===
 echo ">>> Step 3: verify 5 hooks installed"
+# v2.0.0: only 3 core hooks (SOP injection + base infrastructure).
+# error_recovery_checkpoint and dangerous_branch_reminder were moved to examples/
+# (they encode individual workflow preferences, not universal patterns).
 expected_hooks=(
-  error_recovery_checkpoint.py
   memory_intake_check.py
   rule_intake_reminder.py
-  dangerous_branch_reminder.py
   cleanup_hook.py
 )
 for h in "${expected_hooks[@]}"; do
@@ -96,7 +97,9 @@ python3 -c "
 import json, sys
 d = json.load(open('$HOME/.claude/settings.json'))
 hooks = d.get('hooks', {})
-expected_events = ['PostToolUse', 'PreToolUse', 'UserPromptSubmit', 'SessionStart']
+# v2.0.0: 3 core hooks register on these 3 events
+# (PostToolUse used to host error_recovery_checkpoint — now moved to examples/)
+expected_events = ['PreToolUse', 'UserPromptSubmit', 'SessionStart']
 for ev in expected_events:
     if ev not in hooks:
         print(f'  ❌ missing event: {ev}')
