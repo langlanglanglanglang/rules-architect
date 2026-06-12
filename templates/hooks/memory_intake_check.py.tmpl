@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""
+PreToolUse Write/Edit hook: when assistant writes to a CC memory file
+(MEMORY.md, feedback_*.md, reference_*.md under any memory/ dir),
+inject the 5-question rule placement SOP.
+
+Self-contained — does not reference external CLAUDE.md sections.
+Generic — works with any CC project.
+
+Dedupe: per-session lock (~/.cache/claude-hooks/memory-intake-<sid>.lock,
+        auto-cleaned at SessionStart by cleanup_hook.py)
+Audit:  ~/.cache/claude-hooks/audit.jsonl
+
+Installed by rules-architect skill v{{SKILL_VERSION}}
+"""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+def get_cache_dir() -> Path:
+    """Cross-platform cache directory."""
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+def log_audit(hook: str, decision: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def is_memory_path(p: str) -> bool:
+    """Detect CC memory files: */memory/MEMORY.md, */memory/feedback_*.md, */memory/reference_*.md"""
+    if not isinstance(p, str):
+        return False
+    if "/memory/" not in p and "\\memory\\" not in p:
+        return False
+    name = p.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return (
+        name == "memory.md"
+        or name.startswith("feedback_")
+        or name.startswith("reference_")
+    )
+
+
+# Self-contained reminder — full 5-Q SOP embedded, no external references.
+REMINDER = """**About to write to a CC memory file**. Before saving, walk the 5-Question Placement SOP:
+
+| # | Question | Pick layer |
+|---|---|---|
+| 1 | Can trigger condition be expressed by tool/matcher? | **L0 hook** / **L2 path-scoped** |
+| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
+| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md / **L5** lessons |
+| 4 | Personal collaboration preference only? | Current path OK (**L1 memory**) |
+| 5 | Overlaps with existing rule? grep keywords → yes → edit existing |  |
+
+**FORBIDDEN**: skipping the 5 questions and defaulting to L1 memory. This is the #1 leakage.
+
+If you have walked the 5 questions and confirmed L1: output user-visible text first stating
+"5-Q walked, going L1 memory because: ..." then proceed.
+
+This reminder fires once per session via dedupe lock.
+Installed by rules-architect skill."""
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    session_id = data.get("session_id", "unknown")
+    tool_input = data.get("tool_input") or {}
+    file_path = (
+        tool_input.get("file_path", "") if isinstance(tool_input, dict) else ""
+    )
+
+    if not is_memory_path(file_path):
+        return 0
+
+    lock = CACHE / f"memory-intake-{session_id}.lock"
+    if lock.exists():
+        log_audit("memory_intake_check", "dedupe-skip",
+                  session=session_id, path=file_path)
+        return 0
+    lock.touch()
+
+    output = {"hookSpecificOutput": {"additionalContext": REMINDER}}
+    print(json.dumps(output, ensure_ascii=False))
+    log_audit("memory_intake_check", "inject",
+              session=session_id, path=file_path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

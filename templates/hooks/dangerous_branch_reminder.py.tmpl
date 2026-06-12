@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""
+PreToolUse Bash hook: detect `git checkout/switch` to a protected branch
+(default: develop / test / master). Inject a non-blocking reminder.
+
+Parametrized via PROTECTED_BRANCHES env var (default 'develop|test|master').
+Does NOT include 'release' by default — many workflows derive feature
+branches from release, which is a legitimate checkout.
+
+Self-contained reminder text — no external references.
+
+Dedupe: per-session-per-branch lock
+Audit:  ~/.cache/claude-hooks/audit.jsonl
+Output: JSON additionalContext, exit 0 (NEVER exit 2 — that would block
+        legitimate `git checkout release` and similar).
+
+Installed by rules-architect skill v{{SKILL_VERSION}}
+"""
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+
+def get_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+# Configurable list of protected branches (pipe-separated).
+# CRITICAL: do NOT include 'release' by default — checkout release is
+# legitimate for feature-branch derivation in many workflows.
+PROTECTED = os.environ.get("PROTECTED_BRANCHES", "develop|test|master").strip()
+
+# Match: git checkout <branch> OR git switch <branch>
+# Excludes: git checkout -b <new>  (creating new branch is OK)
+PATTERN = re.compile(
+    r"\bgit\s+(?:checkout|switch)\s+"
+    r"(?!-[bB]\b)"                # not creating new branch
+    r"(?:--\s+)?"                  # optional --
+    rf"({PROTECTED})\b"
+)
+
+
+def log_audit(hook: str, decision: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    session_id = data.get("session_id", "unknown")
+    tool_input = data.get("tool_input")
+    cmd = (
+        tool_input.get("command", "")
+        if isinstance(tool_input, dict) else ""
+    )
+
+    m = PATTERN.search(cmd)
+    if not m:
+        return 0
+
+    branch = m.group(1)
+    lock = CACHE / f"dangerous-branch-{session_id}-{branch}.lock"
+    if lock.exists():
+        log_audit("dangerous_branch_reminder", "dedupe-skip",
+                  session=session_id, branch=branch)
+        return 0
+    lock.touch()
+
+    reminder = (
+        f"Detected checkout to protected branch `{branch}`. "
+        f"**Do not develop on protected branches** ({PROTECTED.replace('|', ' / ')}).\n\n"
+        "Possible legitimate intents:\n"
+        f"- Derive feature branch: fetch + pull, then **immediately checkout new feature branch**\n"
+        f"- Inspection / cherry-pick prep: OK, but **switch back to feature before any commit/push**\n\n"
+        f"Installed by rules-architect skill. Configured branches: {PROTECTED}. "
+        f"This reminder fires once per session per branch."
+    )
+    output = {"hookSpecificOutput": {"additionalContext": reminder}}
+    print(json.dumps(output, ensure_ascii=False))
+    log_audit("dangerous_branch_reminder", "inject",
+              session=session_id, branch=branch, configured=PROTECTED)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

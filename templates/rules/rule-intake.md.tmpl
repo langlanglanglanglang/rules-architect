@@ -1,0 +1,50 @@
+---
+paths:
+{{RULE_INTAKE_PATHS}}
+---
+
+# Rule File Edit: 5-Question Placement SOP (path-scoped)
+
+> About to edit a rule file (memory / `.claude/rules/*` / `CLAUDE-*.md` / `workflow.md` etc).
+> **Before editing, walk the 5-Question Placement SOP** — avoid putting rules in the wrong layer.
+
+## 5-Question Placement SOP
+
+| # | Question | Pick layer |
+|---|---|---|
+| 1 | Can trigger condition be expressed by tool/matcher? (e.g. "git commit" / "edit .proto") | **L0 hook** or **L2 path-scoped** |
+| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
+| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md @import / **L5** team lessons |
+| 4 | Personal collaboration preference only, team needn't know? | **L1** memory |
+| 5 | Overlaps with existing rule? grep keywords → yes → **edit existing**, don't create new | — |
+
+## 5-Layer Decision Tree
+
+```
+New rule arises
+├── Real-time intercept + tool/matcher expressible → L0 hook (~/.claude/hooks/*.py)
+├── Triggered when editing specific files → L2 path-scoped (.claude/rules/*.md)
+├── All sessions need it → L3 CLAUDE.md @import chain
+├── Personal collaboration style → L1 memory
+└── Cross-tool / team retrospective → L5 team lessons (repo docs/ai/lessons.md)
+```
+
+## Anti-patterns (consequences of wrong placement)
+
+| Wrong placement | Consequence |
+|---|---|
+| Long template body in CLAUDE.md | Bloats per-session injection → attention dilution |
+| Rhythm rule left in L1 memory | Keeps getting forgotten → only L0 hook catches it reliably |
+| Team rule in personal memory | Teammates can't see (codex/gemini either) |
+| Proto-specific rule in CLAUDE.md | Injected even when editing .ts files → context pollution |
+| Hook with complex business logic | Hook can't see conversation history → write at L2/L3 instead |
+
+## Required actions
+
+1. **Walk all 5 questions** → pick target layer
+2. **grep for overlap** → don't duplicate existing rules
+3. **Output your placement reason** in user-visible text:
+   > "This rule goes to LX because: ..."
+4. **Then edit**
+
+Installed by rules-architect skill v{{SKILL_VERSION}}.

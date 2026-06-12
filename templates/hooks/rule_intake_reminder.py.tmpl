@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""
+UserPromptSubmit hook: when user message contains keywords suggesting new
+rule generation (Chinese: "以后...必须...", English: "from now on, always..."),
+inject the 5-question rule placement SOP.
+
+Self-contained, parametrized keyword presets.
+
+Pattern selection via env var RULE_INTAKE_KEYWORDS:
+  - "chinese" (default): 以后/下次/每次/凡是 patterns
+  - "english": from now on / always / never patterns
+  - any other value: treated as a raw regex (advanced users)
+
+Tightened patterns:
+  - Require imperative/modal verb after trigger word
+  - Refuse to match if the sentence ends with '?' or '？' (question, not rule)
+
+Dedupe: per-session lock
+Audit:  ~/.cache/claude-hooks/audit.jsonl
+
+Installed by rules-architect skill v{{SKILL_VERSION}}
+"""
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+
+def get_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+# === Keyword preset selection ===
+# Tightened: require imperative/modal verb; refuse sentences ending in ?/？
+PRESETS = {
+    "chinese": (
+        # 以后 X 必须/应该/要/不要 (where X is non-punctuation chars, max 15)
+        r"以后[^，。!！\n]{0,15}(?:必须|应该|要|不要|不准|禁止|得|别|开始)"
+        r"|下次[^，。!！\n]{0,15}(?:别|不要|要|得|记住)"
+        r"|每次[^，。!！\n]{0,15}(?:都|必须|得|要|记)"
+        r"|凡是[^，。!！\n]{0,15}(?:都|必须|得|要)"
+        r"|从今(?:天|以)?(?:起|后)"
+        r"|新规则"
+        r"|这条得记"
+        r"|你(?:这套|的)?规则"
+    ),
+    "english": (
+        r"\bfrom now on\b[^?\n]{0,40}(?:must|should|always|never|don't|do not)"
+        r"|\balways\b[^?\n]{0,40}(?:must|should|do|don't|do not)"
+        r"|\bnever\b[^?\n]{0,40}(?:should|do|use)"
+        r"|\bevery time\b[^?\n]{0,40}(?:must|should|need to|need|don't|do not)"
+        r"|\bnew rule\b"
+        r"|\bremember\b[^?\n]{0,20}(?:this|that)"
+        r"|\bgoing forward\b"
+    ),
+}
+
+keyword_choice = os.environ.get("RULE_INTAKE_KEYWORDS", "chinese").strip()
+if keyword_choice in PRESETS:
+    pattern_src = PRESETS[keyword_choice]
+else:
+    # Treat as raw regex (advanced)
+    pattern_src = keyword_choice
+
+PATTERN = re.compile(pattern_src, re.IGNORECASE)
+
+
+def log_audit(hook: str, decision: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+# Self-contained 5-Q SOP — no external references.
+REMINDER_TEMPLATE = """**User message contains rule-introduction keyword** (matched: `{match}`).
+
+Before persisting any new rule, walk the **5-Question Placement SOP**:
+
+| # | Question | Pick layer |
+|---|---|---|
+| 1 | Can trigger condition be expressed by tool/matcher? | **L0 hook** / **L2 path-scoped** |
+| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
+| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md / **L5** lessons |
+| 4 | Personal collaboration preference only? | **L1** memory |
+| 5 | Overlaps with existing rule? grep → yes → edit existing |  |
+
+**Anti-pattern**: defaulting all new rules to L1 memory (most easily forgotten + team can't see).
+
+Before acting, output user-visible text stating the layer choice + reasoning:
+> "This rule goes to LX because: ..."
+
+Fires once per session via dedupe lock. Installed by rules-architect skill."""
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    session_id = data.get("session_id", "unknown")
+    prompt = (
+        data.get("prompt")
+        or data.get("user_prompt")
+        or data.get("message")
+        or ""
+    )
+    if not isinstance(prompt, str):
+        return 0
+
+    # Reject question sentences explicitly (sentence ends with ?/？)
+    # Find first sentence-like fragment containing match
+    m = PATTERN.search(prompt)
+    if not m:
+        return 0
+
+    # Find sentence boundary around the match — if ends with ?/？, skip
+    start = m.start()
+    sentence_end_chars = "。.!?！？\n"
+    end_idx = len(prompt)
+    for i in range(start, len(prompt)):
+        if prompt[i] in sentence_end_chars:
+            end_idx = i + 1
+            break
+    sentence = prompt[start:end_idx].strip()
+    if sentence.endswith("?") or sentence.endswith("？"):
+        log_audit("rule_intake_reminder", "skip-question",
+                  session=session_id, sentence=sentence[:50])
+        return 0
+
+    lock = CACHE / f"rule-intake-{session_id}.lock"
+    if lock.exists():
+        log_audit("rule_intake_reminder", "dedupe-skip",
+                  session=session_id, match=m.group(0))
+        return 0
+    lock.touch()
+
+    reminder = REMINDER_TEMPLATE.format(match=m.group(0))
+    output = {"hookSpecificOutput": {"additionalContext": reminder}}
+    print(json.dumps(output, ensure_ascii=False))
+    log_audit("rule_intake_reminder", "inject",
+              session=session_id, match=m.group(0), preset=keyword_choice)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

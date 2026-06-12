@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+EXAMPLE — project-specific PostToolUse hook (NOT installed by rules-architect).
+
+When a Merge/Pull Request gets created via a VCS MCP tool (codeup / github /
+gitlab / etc), inject a reminder to output:
+  - detailUrl (clickable link)
+  - 5-column status summary table (project / branch / push / merge / change)
+
+This is project-specific because:
+  - The MCP tool name depends on your VCS (mcp__Codeup__create_change_request,
+    mcp__Github__create_pull_request, etc)
+  - The reminder format depends on your team's reporting conventions
+
+To adapt:
+  1. Change MCP_MATCHER to your tool's full name
+  2. Adjust REMINDER text for your reporting style
+  3. Register in settings.json under PostToolUse with the matcher
+
+Distinct from the 5 generic rules-architect hooks — those are universal.
+"""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+# === CUSTOMIZE THESE ===
+MCP_MATCHER = "mcp__Codeup__create_change_request"
+HOOK_NAME = "mr_created_reminder"
+REMINDER = (
+    "Just created a VCS MR. **Output in this same turn**:\n"
+    "1. MR detailUrl (clickable link)\n"
+    "2. 5-column summary table: project | branch | push | merge status | change summary\n"
+    "   (list unchanged projects as ❌ too; summary column should be one sentence)\n\n"
+    "**FORBIDDEN**: long thinking cook followed by silent turn end.\n"
+)
+
+
+def get_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+def log_audit(hook: str, decision: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    session_id = data.get("session_id", "unknown")
+    tool_response = data.get("tool_response")
+    if not isinstance(tool_response, (dict, list, str)):
+        return 0
+
+    # Detect successful MR creation: look for URL-like field
+    blob = json.dumps(tool_response, ensure_ascii=False, default=str)
+    if "detailUrl" not in blob and "html_url" not in blob and "localId" not in blob:
+        return 0
+
+    lock = CACHE / f"{HOOK_NAME}-{session_id}.lock"
+    if lock.exists():
+        log_audit(HOOK_NAME, "dedupe-skip", session=session_id)
+        return 0
+    lock.touch()
+
+    output = {"hookSpecificOutput": {"additionalContext": REMINDER}}
+    print(json.dumps(output, ensure_ascii=False))
+    log_audit(HOOK_NAME, "inject", session=session_id)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

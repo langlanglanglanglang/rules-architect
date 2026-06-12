@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""
+PostToolUse hook: when a tool call returns an error, inject a system-reminder
+forcing the assistant to output a 3-line recovery report BEFORE the next tool
+call. Addresses the "Crunched for 2m -> silent next tool call" failure mode.
+
+Generic version — no project-specific assumptions.
+
+Input  : JSON on stdin (CC hook contract):
+         { "tool_name": str, "tool_input": ..., "tool_response": ... }
+Output : JSON `{"hookSpecificOutput":{"additionalContext":"..."}}` per
+         official Claude Code hooks spec.
+         Exit 0 always; never block.
+
+Installed by rules-architect skill v{{SKILL_VERSION}}
+"""
+import json
+import sys
+
+
+ERROR_SIGNAL_SUBSTRINGS = (
+    "File must be read first",
+    "tool_use_id",
+    "InputValidationError",
+    "Error:",
+    "error:",
+    "command not found",
+    "No such file or directory",
+    "Permission denied",
+    "fatal:",
+    "panic:",
+)
+
+
+def looks_like_error(tool_response) -> bool:
+    if isinstance(tool_response, dict):
+        if tool_response.get("is_error") is True:
+            return True
+        content = tool_response.get("content")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text", "")
+                    if any(sig in text for sig in ERROR_SIGNAL_SUBSTRINGS):
+                        return True
+        text_blob = json.dumps(tool_response, ensure_ascii=False, default=str)
+    else:
+        text_blob = str(tool_response)
+    return any(sig in text_blob for sig in ERROR_SIGNAL_SUBSTRINGS)
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    tool_response = data.get("tool_response")
+    if tool_response is None:
+        return 0
+    if not looks_like_error(tool_response):
+        return 0
+
+    tool_name = data.get("tool_name", "<unknown>")
+    # Self-contained reminder — does not reference any external doc.
+    reminder = (
+        f"Tool `{tool_name}` returned an error. Before the next tool call, you MUST first "
+        "output user-visible assistant text (not thinking) containing 3 lines:\n"
+        "1. **Original plan**: the next step that was interrupted (quote your last declared action)\n"
+        "2. **Error cause**: error message + corrective action you'll take\n"
+        "3. **Now doing**: the specific next action\n\n"
+        "DO NOT skip this text and proceed directly to the next tool call.\n"
+        "This is enforced by rules-architect skill's error_recovery_checkpoint hook."
+    )
+    output = {"hookSpecificOutput": {"additionalContext": reminder}}
+    print(json.dumps(output, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

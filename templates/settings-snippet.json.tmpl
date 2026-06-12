@@ -1,0 +1,64 @@
+{
+  "_comment": "rules-architect skill v{{SKILL_VERSION}} — these hook entries get merged into ~/.claude/settings.json by install_hooks.py via JSON deep-merge. Each entry is owned by the skill and tracked in ~/.claude/.rules-architect-manifest.json. uninstall.py removes only these specific entries (not the entire hooks section).",
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "_owner": "rules-architect",
+        "matcher": "Edit|Write|Bash|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/error_recovery_checkpoint.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "_owner": "rules-architect",
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/memory_intake_check.py"
+          }
+        ]
+      },
+      {
+        "_owner": "rules-architect",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/dangerous_branch_reminder.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "_owner": "rules-architect",
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/rule_intake_reminder.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "_owner": "rules-architect",
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/cleanup_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}

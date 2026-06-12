@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""
+SessionStart hook: maintenance of rules-architect hook state.
+
+- Delete stale dedupe lock files (mtime > 24h)
+- Rotate audit.jsonl when > {{AUDIT_MAX_BYTES}} (default 1 MB)
+- Output nothing to context (silent maintenance)
+
+Generic — works for any rules-architect install.
+
+Installed by rules-architect skill v{{SKILL_VERSION}}
+"""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+def get_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+LOCK_TTL_SECONDS = int(os.environ.get("HOOK_LOCK_TTL_SECONDS", 86400))  # 24h
+AUDIT_MAX_BYTES = int(os.environ.get("AUDIT_MAX_BYTES", 1024 * 1024))   # 1 MB
+
+
+def cleanup_locks(now: float) -> int:
+    """Remove .lock files older than TTL. Returns count removed."""
+    removed = 0
+    if not CACHE.exists():
+        return 0
+    for p in CACHE.glob("*.lock"):
+        try:
+            mtime = p.stat().st_mtime
+            if (now - mtime) > LOCK_TTL_SECONDS:
+                p.unlink()
+                removed += 1
+        except Exception:
+            continue
+    return removed
+
+
+def rotate_audit(now: float) -> bool:
+    """If audit.jsonl exceeds AUDIT_MAX_BYTES, rotate to audit-YYYYMMDD.jsonl"""
+    audit = CACHE / "audit.jsonl"
+    if not audit.exists():
+        return False
+    try:
+        size = audit.stat().st_size
+    except Exception:
+        return False
+    if size <= AUDIT_MAX_BYTES:
+        return False
+    date_str = time.strftime("%Y%m%d", time.localtime(now))
+    rotated = CACHE / f"audit-{date_str}.jsonl"
+    # Avoid overwrite if multiple rotations same day
+    suffix = 0
+    while rotated.exists():
+        suffix += 1
+        rotated = CACHE / f"audit-{date_str}-{suffix}.jsonl"
+    try:
+        audit.rename(rotated)
+        return True
+    except Exception:
+        return False
+
+
+def log_audit(action: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": "cleanup_hook", "decision": action, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def main() -> int:
+    now = time.time()
+    locks_removed = cleanup_locks(now)
+    rotated = rotate_audit(now)
+    if locks_removed or rotated:
+        log_audit(
+            "cleanup",
+            locks_removed=locks_removed,
+            audit_rotated=rotated,
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
