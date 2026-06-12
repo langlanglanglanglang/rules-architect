@@ -4,6 +4,43 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.2.0] — 2026-06-12
+
+### Added
+
+- **`bootstrap.sh`** — one-line remote installer. Users no longer need
+  to clone manually:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
+  ```
+  Supports `--install-dir`, `--mode D|C|B|A`, `--branch`, `--tag`,
+  `--skip-install`, `--skip-clone-pull`. Handles existing-dir git pull
+  and dependency check (git + python3).
+- **README "Quick install" section** (English + 中文) showing curl
+  one-liner + per-mode invocations + manual alternative.
+
+### Rationale
+
+Until v2.1.x users needed `git clone` + `python3 <script>` knowledge.
+`bootstrap.sh` gives the standard "curl | bash" UX. Portable to any
+project before/without official Anthropic plugin marketplace listing.
+
+## [2.1.1] — 2026-06-12
+
+### Fixed
+
+- **`install_hook_from_memory.py` smoke test** previously used a static
+  `session_id="smoke"` that left a stale dedupe lock at
+  `~/.cache/claude-hooks/<hook>-smoke.lock`. Any later invocation with
+  the same session id (e.g. sandbox verification, user's first real
+  session) was silently skipped → empty output → broken downstream
+  JSON parsing.
+- Fix: smoke test now uses `install-smoke-<unix_ts>` (unique per run)
+  and deletes its own lock immediately after, so the generated hook
+  fires fresh on the user's first real CC session.
+- Caught by sandbox Step 7.5 (Step 7.5 itself was correct; install was
+  leaving stale state).
+
 ## [2.1.0] — 2026-06-12
 
 ### Added
