@@ -2,6 +2,8 @@
 
 [English](README.md) | **中文**
 
+> 另见：[与官方 claude-md-improver 的对比](docs/comparison-vs-claude-md-improver.zh.md)
+
 > Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
 
 ## 安装包含什么
