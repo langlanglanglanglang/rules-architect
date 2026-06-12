@@ -1,3 +1,5 @@
+**English** | [中文](README.zh.md)
+
 # rules-architect
 
 > Self-improving rule architecture for Claude Code. Install 4 hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
