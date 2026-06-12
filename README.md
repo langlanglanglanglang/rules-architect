@@ -46,6 +46,30 @@ This skill provides **3 layers of real-time interception** at the rule-writing m
 #    Re-run with mode A (full install) or B/C for partial
 ```
 
+
+## Content preservation guarantees
+
+This skill **never modifies your existing content** without explicit consent and manifest tracking:
+
+| Your data | Action |
+|---|---|
+| L1 memory files | ✋ Never touched |
+| CLAUDE.md | ✋ Never touched |
+| CLAUDE-personal.md (§一~§五 etc) | ✋ Outside `<!-- rules-architect:section-6 BEGIN/END -->` markers: untouched |
+| Existing hooks in `~/.claude/settings.json` | ✋ Preserved via deep-merge with conflict detection |
+| Existing `.claude/rules/*.md` files | ✋ Only `rule-intake.md` is added (mode C/A) |
+| Files you locally modified | ✋ Skipped on hash mismatch (no overwrite or delete) |
+
+What this skill **adds** (all tracked in `~/.claude/.rules-architect-manifest.json`):
+- 5 hook entries in `~/.claude/settings.json` (settings.json backed up to `.bak.<ts>` first)
+- 5 hook scripts in `~/.claude/hooks/`
+- Mode C / A: `<project>/.claude/rules/rule-intake.md`
+- Mode A only: §六 section in `<project>/CLAUDE-personal.md` (marker-protected for precise removal)
+
+**Migration vs Modification**: `diagnose.py` **suggests** memory entries that could be upgraded to other layers (e.g. rhythm-related rules → L0 hook), but **never auto-moves anything**. All migration is human-triggered (see §六 Upgrade flow).
+
+Uninstall is precise (per-manifest, hash-verified). Files you modified locally are never overwritten or deleted.
+
 ## What modes do
 
 | Mode | Risk | Files changed |

@@ -118,6 +118,27 @@ User customizes:
 - ❌ L3 CLAUDE.md audit — delegated to `claude-md-management:claude-md-improver`
 - ❌ Cross-tool support — CC-only. codex / gemini users: see README "Cross-tool" section
 
+
+## Content Preservation Guarantees
+
+This skill **never modifies your existing content** without explicit consent. All changes are tracked in `~/.claude/.rules-architect-manifest.json` for precise rollback.
+
+**Never touched**:
+- L1 memory files (your private notes)
+- CLAUDE.md content
+- CLAUDE-personal.md sections outside `<!-- rules-architect:section-6 BEGIN/END -->` markers
+- Your existing `~/.claude/settings.json` entries (deep-merge preserves them)
+- Other `.claude/rules/*.md` files
+- Files you've modified locally (hash mismatch → skipped with warning)
+
+**Added (with consent)**:
+- Up to 5 hook scripts in `~/.claude/hooks/`
+- Up to 5 hook entries in `~/.claude/settings.json` (backed up first)
+- Mode C/A: `.claude/rules/rule-intake.md`
+- Mode A: §六 section in `CLAUDE-personal.md` (marker-protected)
+
+**Migration vs Modification**: `diagnose.py` suggests which memory entries could be upgraded to other layers (with target + reason), but never auto-moves them. Migration is human-triggered via §六 Upgrade flow.
+
 ## Minimum Requirements
 
 - Claude Code >= 1.5.0 (UserPromptSubmit hook required)

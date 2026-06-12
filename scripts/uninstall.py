@@ -202,6 +202,22 @@ def restore_backup_if_requested(manifest, dry_run):
     ok(f"Restored settings.json from {bak_path.name}")
 
 
+
+def print_uninstall_preservation_summary() -> None:
+    """Show what uninstall did NOT touch — for user trust."""
+    print()
+    print("✅ What we did NOT touch on uninstall:")
+    print()
+    print("   ✋ Your L1 memory files                — entirely yours, never deleted")
+    print("   ✋ Your CLAUDE.md                       — never touched")
+    print("   ✋ Your CLAUDE-personal.md outside §六  — §一~§五 (and others) preserved")
+    print("   ✋ Other hooks in settings.json         — only our 5 entries removed")
+    print("   ✋ Other .claude/rules/*.md             — only rule-intake.md removed")
+    print()
+    print("   Files you modified locally (hash mismatch) → skipped with warning, never deleted.")
+    print()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -254,7 +270,7 @@ def main() -> int:
     MANIFEST_PATH.rename(removed_path)
     ok(f"Manifest archived → {removed_path}")
 
-    print()
+    print_uninstall_preservation_summary()
     print("✨ Uninstall complete.")
     print("   Files you modified manually are preserved.")
     print("   Re-install: python3 .../scripts/install_hooks.py")

@@ -184,6 +184,28 @@ RHYTHM_KEYWORDS = [
     "声明", "汇报", "停顿", "thinking",
     "立刻", "立即", "实时",
 ]
+# Sub-classification: which keywords strongly suggest L0 hook (rhythm/timing)
+# vs which suggest L3 CLAUDE.md (rule-content stability)
+L0_STRONG_KEYWORDS = {"声明", "停顿", "立刻", "立即", "实时", "thinking"}
+TEAM_KEYWORDS = {"team", "team-wide", "所有", "全员", "团队", "everyone"}
+
+
+def classify_upgrade_target(hits: list, desc: str) -> tuple:
+    """Decide recommended target layer + reason."""
+    desc_lower = desc.lower()
+    has_l0 = any(k in L0_STRONG_KEYWORDS for k in hits)
+    has_team = any(k in desc_lower for k in TEAM_KEYWORDS)
+    if has_l0 and has_team:
+        return ("L0 hook + L3 CLAUDE.md",
+                "rhythm AND team-wide — write rule body in L3, install hook for interception")
+    if has_l0:
+        return ("L0 hook",
+                f"rhythm keyword(s) {hits[:2]} — needs real-time intercept")
+    if has_team:
+        return ("L3 CLAUDE.md",
+                "team-wide rule — codex/gemini users also need to see it")
+    return ("L3 CLAUDE.md or L0 hook",
+            "stable rule — L3 for team visibility, L0 for enforcement")
 
 
 def detect_upgrade_candidates(memory_dir: Path) -> list:
@@ -194,16 +216,16 @@ def detect_upgrade_candidates(memory_dir: Path) -> list:
         except Exception:
             continue
         head = text[:500].lower() + text[:500]
-        # heuristic: rhythm/timing keywords appearing in description suggest hook candidate
         hits = [k for k in RHYTHM_KEYWORDS if k in head]
         if hits:
-            # extract description
             m = re.search(r"description:\s*(.+?)(?:\n|$)", text)
             desc = m.group(1).strip()[:100] if m else ""
+            target, why = classify_upgrade_target(hits, desc)
             candidates.append({
                 "name": p.stem,
-                "reason": f"rhythm-related keywords found ({', '.join(hits[:3])}) "
-                          "— consider L0 hook for 100% interception",
+                "matched_keywords": hits[:5],
+                "recommended_target": target,
+                "reason": why,
                 "description": desc,
             })
     return candidates
@@ -569,11 +591,21 @@ def render_human(report: dict) -> str:
     cands = l1.get("upgrade_candidates", [])
     if cands:
         lines.append("")
-        lines.append("📌 Memory upgrade candidates (could become L0 hooks):")
-        for c in cands[:10]:
-            lines.append(f"   - {c['name']}: {c['reason']}")
-        if len(cands) > 10:
-            lines.append(f"   ... and {len(cands) - 10} more")
+        lines.append("📋 Memory → recommended migrations (advice only, NO files moved):")
+        lines.append("")
+        lines.append(f"   {'Memory entry':<46s} {'Suggested target':<26s} Reason")
+        lines.append(f"   {'-'*46} {'-'*26} {'-'*40}")
+        for c in cands[:15]:
+            name = c["name"][:44]
+            tgt = c.get("recommended_target", "?")[:24]
+            reason = c.get("reason", "")[:60]
+            lines.append(f"   {name:<46s} {tgt:<26s} {reason}")
+        if len(cands) > 15:
+            lines.append(f"   ... and {len(cands) - 15} more candidates")
+        lines.append("")
+        lines.append("   ⚠️  diagnose.py shows advice only — NOTHING is moved automatically.")
+        lines.append("       Migration is human-triggered (see §六 Upgrade flow in")
+        lines.append("       CLAUDE-personal.md, or use rules-architect-migrate.py if installed).")
 
     # Recommended next steps
     lines.append("")

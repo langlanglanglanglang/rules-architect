@@ -55,6 +55,30 @@ CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。
 | A. 全装 | 中 | B + 给你项目的 `CLAUDE-personal.md` 加 §六 |
 | E. 卸载 | — | 按 manifest 精确回滚 |
 
+
+## 内容保护保证
+
+本 skill **从不修改**你已有的内容，除非明确同意且记录到 manifest：
+
+| 你的数据 | 处理 |
+|---|---|
+| L1 memory 文件 | ✋ 从不动 |
+| CLAUDE.md | ✋ 从不动 |
+| CLAUDE-personal.md（§一~§五 等） | ✋ 在 `<!-- rules-architect:section-6 BEGIN/END -->` markers **外**：从不动 |
+| `~/.claude/settings.json` 已有 hook | ✋ deep-merge 含冲突检测，全部保留 |
+| 已有的 `.claude/rules/*.md` | ✋ 只加 `rule-intake.md`（mode C/A） |
+| 你本地改过的文件 | ✋ hash 不一致 → 跳过（不覆盖、不删除） |
+
+本 skill **加了什么**（全部跟踪到 `~/.claude/.rules-architect-manifest.json`）：
+- `~/.claude/settings.json` 加 5 个 hook 入口（先备份 `.bak.<ts>`）
+- `~/.claude/hooks/` 加 5 个 hook 脚本
+- 模式 C / A：`<project>/.claude/rules/rule-intake.md`
+- 模式 A 独有：`<project>/CLAUDE-personal.md` 加 §六 节（marker 保护，便于精确移除）
+
+**迁移 vs 修改**：`diagnose.py` **建议**哪些 memory 条目适合升级到其它层（如节奏类规则 → L0 hook），但**绝不自动迁移**。所有迁移由人工触发（见 §六 Upgrade 流程）。
+
+卸载是精确的（按 manifest，hash 校验）。你本地修改过的文件**从不**被覆盖或删除。
+
 ## 5 层记忆模型
 
 | 层 | 内容 | 触发 |

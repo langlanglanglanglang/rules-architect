@@ -527,6 +527,28 @@ def smoke_test_all() -> bool:
 
 
 # === Main ===
+
+def print_content_preservation_summary(backup_path: Optional[str]) -> None:
+    """Show what the install touched vs preserved — for user trust."""
+    print()
+    print("✅ Content preservation summary:")
+    print()
+    print("   ✋ Your L1 memory files       — NOT touched (entirely yours)")
+    print("   ✋ Your CLAUDE.md             — NOT touched")
+    print("   ✋ Existing hook scripts      — skipped on hash mismatch (your edits preserved)")
+    print("   ✋ Existing settings.json entries — deep-merge preserves everything else")
+    print()
+    print("   ⭐ Changes (all tracked in manifest):")
+    print("      + up to 5 generic hook scripts in ~/.claude/hooks/")
+    print("      + up to 5 hook entries in ~/.claude/settings.json")
+    if backup_path:
+        print(f"      → settings.json backed up: {backup_path}")
+    print()
+    print("   Anything outside the above list was NOT modified by this skill.")
+    print("   Uninstall is precise (hash-verified per manifest).")
+    print()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Install rules-architect hooks")
     ap.add_argument("--dry-run", action="store_true",
@@ -624,7 +646,7 @@ def main() -> int:
         smoke_test_all()
 
     # 9. Summary
-    print()
+    print_content_preservation_summary(backup_path)
     print("✨ Install complete.")
     print(f"   See {MANIFEST_PATH} for what was installed.")
     print(f"   Configure via env vars:")
