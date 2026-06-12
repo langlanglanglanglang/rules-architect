@@ -602,12 +602,23 @@ def render_human(report: dict) -> str:
             tgt = c.get("recommended_target", "?")[:24]
             reason = c.get("reason", "")[:60]
             lines.append(f"   {name:<46s} {tgt:<26s} {reason}")
+            desc = (c.get("description") or "").strip()
+            if desc:
+                if len(desc) > 110:
+                    desc = desc[:107] + "..."
+                lines.append(f"     ↳ {desc}")
         if len(cands) > 15:
             lines.append(f"   ... and {len(cands) - 15} more candidates")
         lines.append("")
         lines.append("   ⚠️  diagnose.py shows advice only — NOTHING is moved automatically.")
-        lines.append("       Migration is human-triggered (see §六 Upgrade flow in")
-        lines.append("       CLAUDE-personal.md, or use rules-architect-migrate.py if installed).")
+        lines.append("")
+        lines.append("   To act on a candidate, tell the main agent:")
+        lines.append("     • \"upgrade <candidate-name>\"  → agent walks the 5-Q SOP, proposes a")
+        lines.append("       concrete hook spec (event + matcher + reminder), waits for your y/N,")
+        lines.append("       then runs install_hook_from_memory.py + mark_memory_promoted.py.")
+        lines.append("     • \"deprecate <candidate-name>\" → agent appends a Deprecated marker")
+        lines.append("       (memory body kept in git history).")
+        lines.append("     • Otherwise: leave it in L1.")
 
     # Recommended next steps
     lines.append("")
