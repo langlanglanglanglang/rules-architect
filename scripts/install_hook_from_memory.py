@@ -181,11 +181,12 @@ def main():
     save_manifest(m)
     ok(f"Manifest updated")
 
-    # Smoke test
+    # Smoke test (uses unique session id to avoid colliding with user dedupe locks)
+    smoke_session_id = f"install-smoke-{int(time.time())}"
     try:
         out = subprocess.run(
             ["python3", str(dest_path)],
-            input='{"session_id":"smoke","tool_input":{},"prompt":"test"}',
+            input=f'{{"session_id":"{smoke_session_id}","tool_input":{{}},"prompt":"test"}}',
             capture_output=True, text=True, timeout=5
         )
         if out.returncode == 0:
@@ -194,6 +195,18 @@ def main():
             warn(f"Smoke test exit={out.returncode}: {out.stderr[:200]}")
     except Exception as e:
         warn(f"Smoke test skipped: {e}")
+    # Clean up the dedupe lock we just created so the hook fires fresh on
+    # the user's first real session.
+    for cache_root in [
+        Path(os.environ.get("XDG_CACHE_HOME", "")) / "claude-hooks" if os.environ.get("XDG_CACHE_HOME") else None,
+        Path.home() / ".cache" / "claude-hooks",
+    ]:
+        if cache_root is None:
+            continue
+        lock = cache_root / f"{name}-{smoke_session_id}.lock"
+        if lock.exists():
+            try: lock.unlink()
+            except Exception: pass
 
     print()
     print(f"✨ Hook '{name}' installed and registered.")
