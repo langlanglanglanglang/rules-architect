@@ -14,267 +14,285 @@ triggers:
 
 # Rules Architect Skill
 
-Self-improving rule architecture for Claude Code. Installs 4 hooks + 1 path-scoped rule + maintenance docs to make rule placement reliable, instead of relying on CLAUDE.md attention.
+> **中文** | [English](SKILL.en.md)
 
-## The Problem This Solves
+Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule + 维护文档，让规则归位变可靠，不再靠 CLAUDE.md 的 attention。
 
-Default CC behavior: every nuance gets dumped to L1 memory (because it's the most convenient layer to write to). Result:
-- Memory bloats with rules that should be elsewhere
-- Team can't see your memory (private to user)
-- CLAUDE.md instructions get diluted in long sessions
-- Hook-pluckable rules left in memory keep getting forgotten
+## 它解决的问题
 
-This skill provides **3 layers of interception** at rule-writing moment, forcing placement re-evaluation.
+Claude Code 默认行为：所有细节都被甩到 L1 memory（因为 memory 是最方便写入的层）。结果是：
 
-## 5-Layer Memory Model
+- Memory 越堆越多，里面塞了大量本该放别处的规则
+- 团队看不到你的 memory（私人）
+- CLAUDE.md 在长会话里 attention 稀释
+- 本来应该 hook 拦截的规则留在 memory，结果继续被忘
 
-| Layer | What | Trigger | Token cost |
+本 skill 在**规则写入瞬间**提供 **3 层拦截**，强制重新评估归位。
+
+## 5 层记忆模型
+
+| 层 | 是什么 | 触发 | token 开销 |
 |---|---|---|---|
-| **L0 hooks** | `~/.claude/hooks/*.py` + settings.json config | Tool call before/after, real-time | 0 startup, ~50-200/inject |
-| **L1 memory** | `~/.claude/projects/.../memory/*.md` | Index injected every session; details on demand | ~3k index |
-| **L2 path-scoped** | `.claude/rules/*.md` with frontmatter `paths:` | Edit matching file → auto-inject | 0 startup |
-| **L3 CLAUDE.md** | `CLAUDE.md` + `@import` chain | Session start, fully loaded | 40k+ |
-| **L5 team lessons** | Repo `docs/ai/lessons.md` | Manual or workflow-triggered | 0 (on demand) |
+| **L0 hooks** | `~/.claude/hooks/*.py` + settings.json 配置 | 工具调用前/后，实时 | 启动 0，注入约 50-200 |
+| **L1 memory** | `~/.claude/projects/.../memory/*.md` | 每 session 注入索引，明细按需读 | 索引约 3k |
+| **L2 path-scoped** | `.claude/rules/*.md`，frontmatter 含 `paths:` | 编辑匹配文件时自动注入 | 启动 0 |
+| **L3 CLAUDE.md** | `CLAUDE.md` + `@import` 链 | session 启动全量加载 | 40k+ |
+| **L5 team lessons** | 仓库内 `docs/ai/lessons.md` | 人工或工作流触发读 | 0（按需） |
 
-## 5-Question Placement SOP
+## 5 问归位 SOP
 
-Walk these 5 questions **before** writing any new rule:
+任何新规则**写入前**必走 5 问：
 
-| # | Question | Pick layer |
+| # | 问题 | 选层 |
 |---|---|---|
-| 1 | Can trigger condition be expressed by tool/matcher? (e.g. "git commit", "edit .proto") | **L0 hook** or **L2 path-scoped** |
-| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
-| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md or **L5** lessons |
-| 4 | Personal collaboration preference, team needn't know? | **L1** memory |
-| 5 | Overlaps with existing rule? grep keywords → yes → edit existing, don't create new | — |
+| 1 | 触发条件能用 tool/matcher 精确表达？（如 "git commit"、"编辑 .proto"） | **L0 hook** 或 **L2 path-scoped** |
+| 2 | 只在编辑特定文件/目录时才用？ | **L2** `.claude/rules/` |
+| 3 | 全团队都要遵守（含 codex/gemini 用户）？ | **L3** CLAUDE.md 或 **L5** lessons |
+| 4 | 仅个人协作偏好，团队不需要知道？ | **L1** memory |
+| 5 | 与已有规则重叠？grep 关键词 → 是 → 改现有，别新建 | — |
 
-**FORBIDDEN**: Skip the 5 questions and default to L1 memory. This is the biggest source of leakage.
+**禁止**：跳过 5 问直接默认落 L1 memory——这是泄漏的最大来源。
 
-## 5-Step Execution Flow (orchestrated by the main agent in your CC session)
+## 5 步执行流程（由主 agent 在 CC session 中编排）
 
-This skill is invoked by the user via `/rules-architect`. The **main agent** (the Claude in your CC session) orchestrates these 5 steps — NOT a single Python script. Memory migration requires semantic judgment that only the agent can provide.
+本 skill 通过 `/rules-architect` 由用户触发。**主 agent**（你 CC session 里的 Claude）负责编排这 5 步——**不是**一个 Python 脚本一把梭。memory 升级需要语义判断，只有主 agent 能给。
 
-### Step 1: Diagnose (no changes)
+### Step 1：诊断（不改文件）
 
 ```bash
 python3 scripts/diagnose.py --json > /tmp/ra-before.json
 ```
 
-Show user the structured report including the **memory upgrade candidates table** with `recommended_target` + `reason` per entry.
+把结构化报告展示给用户，包括 **memory 升级候选表**——每条候选附 `recommended_target` + `reason`。
 
-### Step 2: Present 5-layer model + 5-Q SOP
+### Step 2：展示 5 层模型 + 5 问 SOP
 
-Display the architecture and SOP. Briefly explain what migrating a memory entry to L0 hook means (continuous interception vs L1 advisory).
+展示架构与 SOP。简要说明"把一条 memory 升 L0 hook 意味着什么"（持续拦截 vs L1 单纯建议）。
 
-### Step 3: Mode selection
+### Step 3：模式选择
 
-| Mode | What |
+| 模式 | 内容 |
 |---|---|
-| **D**. Diagnose only | No changes (safest first run) |
-| **C**. Path-scoped only | Add `rule-intake.md` to current project |
-| **B**. Hooks only | Install 3 core hooks (memory_intake / rule_intake / cleanup) |
-| **A**. Full install | All of B + rule-intake + §六 + interactive memory migration |
-| **E**. Uninstall | Roll back per manifest |
+| **D**. 仅诊断 | 不改文件（首次跑最安全） |
+| **C**. 仅 path-scoped | 在当前项目加 `rule-intake.md` |
+| **B**. 仅 hook | 装 3 个核心 hook（memory_intake / rule_intake / cleanup） |
+| **A**. 全量安装 | B + rule-intake + §六 + 交互式 memory 升级 |
+| **E**. 卸载 | 按 manifest 精准回滚 |
 
-### Step 4: Execute
+### Step 4：执行
 
-#### 4a. Install core 3 hooks (modes B / A)
+#### 4a. 装 3 个核心 hook（模式 B / A）
 
 ```bash
 python3 scripts/install_hooks.py --non-interactive
 ```
 
-Installs only the 3 universal hooks. Opinionated workflow hooks (error_recovery, dangerous_branch) live in `examples/` for the user to fork.
+只装 3 个通用 hook。带个人偏好的 workflow hook（error_recovery、dangerous_branch）放在 `examples/` 里供用户 fork。
 
-#### 4b. Memory migration loop (mode A; optional in B)
+#### 4b. memory 升级循环（模式 A；模式 B 可选）
 
-Read the `upgrade_candidates` from Step 1. **For each candidate**:
+从 Step 1 读 `upgrade_candidates`。**对每条候选**：
 
-1. Ask user: *"Promote `<feedback_name>`? (suggested target: `<target>`, because: `<reason>`) [y/N]"*
-2. If yes:
-   - **Read** the full memory body
-   - **Synthesize** a concise reminder text (you, the main agent, do semantic distillation — extract the action/constraint to inject at intercept time; keep < 500 chars, self-contained, no external doc references)
-   - **Decide** hook event + matcher:
-     - rhythm keyword + no specific tool → typically `UserPromptSubmit` + `*`
-     - tied to specific tool (commit / MR / etc) → that tool's PostToolUse
-     - "L3 CLAUDE.md" recommendation → SKIP hook, suggest user write rule to CLAUDE.md
-   - **Write** reminder to `/tmp/<feedback_name>-reminder.txt`
-   - **Install** the hook:
+1. 问用户：*「升级 `<feedback_name>`？（建议目标：`<target>`，原因：`<reason>`）[y/N]」*
+2. 若 yes：
+   - **读** memory 全文
+   - **提炼**简洁 reminder 文本（你——主 agent——做语义蒸馏：把动作/约束提取成拦截时注入的文本；< 500 字符，自包含，不引用外部文档）
+   - **决定** hook 事件 + matcher：
+     - 节奏关键词 + 无特定工具 → 通常 `UserPromptSubmit` + `*`
+     - 绑定特定工具（commit / MR 等） → 该工具的 PostToolUse
+     - 建议是「L3 CLAUDE.md」→ **跳过 hook**，建议用户写到 CLAUDE.md
+   - **写** reminder 到 `/tmp/<feedback_name>-reminder.txt`
+   - **装** hook：
      ```bash
      python3 scripts/install_hook_from_memory.py \
          --name <stem> \
          --event <event> \
          --matcher '<matcher>' \
          --reminder-file /tmp/<feedback_name>-reminder.txt \
-         --description "<one-line>" \
+         --description "<一句话>" \
          --feedback-source <feedback_name>
      ```
-   - **Mark memory promoted** (replaces body with stub, preserves frontmatter + git history):
+   - **标记 memory 已升级**（正文换 stub，frontmatter 与 git 历史保留）：
      ```bash
      python3 scripts/mark_memory_promoted.py \
          --feedback <feedback_name> \
          --target "L0 hook ~/.claude/hooks/<stem>.py"
      ```
 
-#### 4c. Add rule-intake.md (modes C / A)
+#### 4c. 装 rule-intake.md（模式 C / A）
 
 ```bash
 python3 scripts/install_rule_intake.py
 ```
 
-#### 4d. Add §六 to CLAUDE-personal.md (mode A only)
+#### 4d. 给 CLAUDE-personal.md 加 §六（仅模式 A）
 
 ```bash
 python3 scripts/install_personal_md_section.py --create-if-missing
 ```
 
-### Step 5: Diagnose after + before/after summary
+### Step 5：再诊断 + 前后对比
 
 ```bash
 python3 scripts/diagnose.py --json > /tmp/ra-after.json
 ```
 
-Show user a structured diff:
-- L0 hooks count (before → after)
-- L1 candidates remaining (before → after, with which were promoted)
-- Token estimate (before → after)
-- Files added / modified / preserved
-- Per-migration outcomes ("feedback_X → L0 hook ~/.claude/hooks/X.py")
+给用户展示结构化 diff：
+
+- L0 hook 数量（前 → 后）
+- L1 候选剩余（前 → 后，哪几条被升了）
+- token 预估（前 → 后）
+- 新增 / 修改 / 保留的文件
+- 每条升级结果（"feedback_X → L0 hook ~/.claude/hooks/X.py"）
 
 ---
 
-### Main agent guardrails
+### 主 agent 红线
 
-- **Always run Step 1 first** before any modification
-- **Never** auto-migrate without explicit per-candidate user consent
-- **Concise reminders**: < 500 chars, self-contained, do not reference external sections
-- **If matcher is uncertain**: show the user a draft + ask before installing
-- **Step 5 must show before/after** so user sees impact
+- **永远先跑 Step 1**，任何改动前
+- **绝不**未经每条候选的明确用户同意就自动升级
+- **reminder 精简**：< 500 字符、自包含、不引用外部章节
+- **matcher 不确定**时：先给用户看草稿 + 问确认再装
+- **Step 5 必须给前后对比**，让用户看到 impact
 
-## What This Skill Provides
+## 本 skill 提供什么
 
-**3 core hooks (universal, installed by default)**:
-- `memory_intake_check.py` — writing to memory → inject 5-Q SOP
-- `rule_intake_reminder.py` — user msg has rule keywords → inject 5-Q SOP
-- `cleanup_hook.py` — SessionStart cleanup (lock TTL + audit rotation)
+**3 个核心 hook（通用，默认装）**：
 
-**Opt-in hooks (in `examples/`, fork + customize)**:
-- `error_recovery_checkpoint.py.example` — force 3-line recovery on tool error
-- `dangerous_branch_reminder.py.example` — checkout protected branch warning
-- `mr_created_reminder.py.example` — codeup MCP MR → status summary
-- See `examples/extension-hook-skeleton.py` to write your own from scratch
+- `memory_intake_check.py` — 写入 memory 时 → 注入 5 问 SOP
+- `rule_intake_reminder.py` — 用户消息含规则关键词 → 注入 5 问 SOP
+- `cleanup_hook.py` — SessionStart 清理（lock TTL + audit 轮转）
 
-**1 path-scoped rule**:
-- `.claude/rules/rule-intake.md` — editing any rule file → inject 5-Q SOP
+**Opt-in hook（在 `examples/`，fork + 改造）**：
 
-**Maintenance docs + scripts**:
-- `CLAUDE-personal.md §六` template (upgrade / retire / team sync flows)
-- `memory_sync.py` — single-direction push memory → team lessons.md
-- `cleanup_hook.py` — SessionStart cleanup (lock TTL + audit rotation)
+- `error_recovery_checkpoint.py.example` — 工具报错时强制 3 行汇报
+- `dangerous_branch_reminder.py.example` — checkout 受保护分支时警告
+- `mr_created_reminder.py.example` — codeup MCP MR → 汇总表
+- 看 `examples/extension-hook-skeleton.py` 从零写自己的 hook
 
-## What This Skill Does NOT Provide
+**1 个 path-scoped 规则**：
 
-- ❌ Project-specific hooks (e.g. `mr_created_reminder` for codeup MCP) — see `examples/`
-- ❌ Business path-scoped rules (proto / sql / release-notes / meta-md) — see `examples/`
-- ❌ L3 CLAUDE.md audit — delegated to `claude-md-management:claude-md-improver`
-- ❌ Cross-tool support — CC-only. codex / gemini users: see README "Cross-tool" section
+- `.claude/rules/rule-intake.md` — 编辑任何规则文件时 → 注入 5 问 SOP
 
+**维护文档 + 脚本**：
 
-## Content Preservation Guarantees
+- `CLAUDE-personal.md §六` 模板（升级 / 退役 / 团队同步流程）
+- `memory_sync.py` — 单向 push memory → 团队 lessons.md
+- `cleanup_hook.py` — SessionStart 清理（lock TTL + audit 轮转）
 
-This skill **never modifies your existing content** without explicit consent. All changes are tracked in `~/.claude/.rules-architect-manifest.json` for precise rollback.
+## 本 skill 不提供什么
 
-**Never touched**:
-- L1 memory files (your private notes)
-- CLAUDE.md content
-- CLAUDE-personal.md sections outside `<!-- rules-architect:section-6 BEGIN/END -->` markers
-- Your existing `~/.claude/settings.json` entries (deep-merge preserves them)
-- Other `.claude/rules/*.md` files
-- Files you've modified locally (hash mismatch → skipped with warning)
+- ❌ 项目特有 hook（如给 codeup MCP 用的 `mr_created_reminder`）— 看 `examples/`
+- ❌ 业务 path-scoped 规则（proto / sql / release-notes / meta-md）— 看 `examples/`
+- ❌ L3 CLAUDE.md 审计 — 委托给 `claude-md-management:claude-md-improver`
+- ❌ 跨工具支持 — 仅 CC。codex / gemini 用户：见 README 「跨工具」节
 
-**Added (with consent)**:
-- Up to 5 hook scripts in `~/.claude/hooks/`
-- Up to 5 hook entries in `~/.claude/settings.json` (backed up first)
-- Mode C/A: `.claude/rules/rule-intake.md`
-- Mode A: §六 section in `CLAUDE-personal.md` (marker-protected)
+## 内容保留承诺
 
-**Migration vs Modification**: `diagnose.py` suggests which memory entries could be upgraded to other layers (with target + reason), but never auto-moves them. Migration is human-triggered via §六 Upgrade flow.
+本 skill **绝不在未经明确同意时**修改你的现有内容。所有改动都记录到 `~/.claude/.rules-architect-manifest.json`，支持精准回滚。
 
-## Minimum Requirements
+**绝不动**：
 
-- Claude Code >= 1.5.0 (UserPromptSubmit hook required)
+- L1 memory 文件（你的私人笔记）
+- CLAUDE.md 正文
+- CLAUDE-personal.md 中 `<!-- rules-architect:section-6 BEGIN/END -->` 标记外的所有内容
+- 你现有的 `~/.claude/settings.json` 条目（deep-merge 保留所有其它项）
+- 其它 `.claude/rules/*.md` 文件
+- 你本地改过的文件（hash 失配 → 跳过 + 警告）
+
+**新增（经同意）**：
+
+- `~/.claude/hooks/` 内至多 5 个 hook 脚本
+- `~/.claude/settings.json` 内至多 5 个 hook 注册项（推送前先备份）
+- 模式 C/A：`.claude/rules/rule-intake.md`
+- 模式 A：`CLAUDE-personal.md` 的 §六 节（marker 保护）
+
+**升级 vs 修改**：`diagnose.py` **建议**哪些 memory 可以升其它层（附 target + reason），但**不会自动移**。升级由人工触发，走 §六 升级流程。
+
+## 最低环境要求
+
+- Claude Code >= 1.5.0（要求 UserPromptSubmit hook）
 - Python 3.7+
-- macOS / Linux (Windows: partial, see README)
+- macOS / Linux（Windows：部分支持，见 README）
 
-## File Layout
+## 文件布局
 
 ```
 ~/.claude/skills/rules-architect/
-├── SKILL.md                              # This file
-├── README.md                             # 5-min start + Q&A
+├── SKILL.md                              # 本文件（中文主版）
+├── SKILL.en.md                           # 英文版
+├── README.md                             # 5 分钟上手 + Q&A（中文）
+├── README.en.md                          # 英文版
 ├── scripts/
-│   ├── diagnose.py                       # L0-L5 scan, --json output
-│   ├── install_hooks.py                  # Deep-merge into settings.json
-│   ├── install_rule_intake.py            # Project-level path-scoped install
-│   ├── install_personal_md_section.py    # Add §六 to CLAUDE-personal.md
-│   ├── uninstall.py                      # Roll back per manifest
-│   └── memory_sync.py                    # Memory → team lessons (push only)
+│   ├── diagnose.py                       # 扫 L0-L5，--json 输出
+│   ├── install_hooks.py                  # deep-merge 到 settings.json
+│   ├── install_rule_intake.py            # 项目级 path-scoped 安装
+│   ├── install_personal_md_section.py    # 加 §六 到 CLAUDE-personal.md
+│   ├── install_hook_from_memory.py       # 从 memory 生成 hook
+│   ├── mark_memory_promoted.py           # 标记 memory 已升级为 stub
+│   ├── uninstall.py                      # 按 manifest 精准回滚
+│   └── memory_sync.py                    # memory → 团队 lessons（仅 push）
 ├── templates/
 │   ├── hooks/
-│   │   ├── error_recovery_checkpoint.py.tmpl
 │   │   ├── memory_intake_check.py.tmpl
 │   │   ├── rule_intake_reminder.py.tmpl  # {{RULE_INTAKE_KEYWORDS}}
-│   │   ├── dangerous_branch_reminder.py.tmpl  # {{PROTECTED_BRANCHES}}
-│   │   └── cleanup_hook.py.tmpl
+│   │   ├── cleanup_hook.py.tmpl
+│   │   └── generated-hook-skeleton.py.tmpl
 │   ├── rules/
 │   │   └── rule-intake.md.tmpl
 │   ├── personal-section-6.md.tmpl
 │   └── settings-snippet.json.tmpl
-├── examples/                             # NOT installed
+├── examples/                             # 不会装
 │   ├── README.md
-│   ├── mr_created_reminder.py.example    # Codeup MCP specific
-│   ├── path-scoped-rule-skeleton.md      # Generic frame
-│   └── extension-hook-skeleton.py
+│   ├── error_recovery_checkpoint.py.example
+│   ├── dangerous_branch_reminder.py.example
+│   ├── mr_created_reminder.py.example    # codeup MCP 专属
+│   ├── path-scoped-rule-skeleton.md
+│   ├── extension-hook-skeleton.py
+│   └── cross-tool-shim.md
 └── tests/
     ├── unit/
     ├── integration/
-    │   └── sandbox_install.sh            # Isolated $HOME test
+    │   └── sandbox_install.sh            # 隔离 $HOME 测试
     └── README.md
 ```
 
 ## Manifest
 
-`~/.claude/.rules-architect-manifest.json` tracks every installed file:
+`~/.claude/.rules-architect-manifest.json` 记录每个装上的文件：
+
 ```json
 {
   "skill_version": "1.0.0",
   "installed_at": "2026-06-12T...",
   "files": [
-    {"path": "~/.claude/hooks/error_recovery_checkpoint.py",
+    {"path": "~/.claude/hooks/memory_intake_check.py",
      "hash": "sha256...", "owner": "rules-architect", "version": "1.0.0"}
   ],
   "settings_hooks_added": [
-    {"event": "PostToolUse", "matcher": "Edit|Write|Bash|MultiEdit",
-     "command": "python3 ~/.claude/hooks/error_recovery_checkpoint.py"}
+    {"event": "PreToolUse", "matcher": "Write|Edit|MultiEdit",
+     "command": "python3 ~/.claude/hooks/memory_intake_check.py"}
   ]
 }
 ```
 
-`uninstall.py` removes only items in manifest (precise rollback, NOT full backup restore).
+`uninstall.py` **只删 manifest 里的项目**（精准回滚，**不是**全量备份还原）。
 
-## Output Convention
+## 输出约定
 
-Each step outputs:
-1. **What we're about to do** (one line)
-2. **Result** (success/fail + details)
-3. **Next action** (or stop on failure)
+每一步输出：
 
-Failures roll back automatically via manifest.
+1. **将要做什么**（一行）
+2. **结果**（成功/失败 + 详情）
+3. **下一步动作**（失败时停下）
 
-## References
+失败会通过 manifest 自动回滚。
 
-- `templates/` — all installable artifacts
-- `scripts/` — install + diagnose + uninstall + sync
-- `examples/` — non-generic templates for inspiration (NOT installed)
-- `tests/` — unit + sandbox integration
-- `README.md` — 5-minute getting started + Q&A
+## 引用
+
+- `templates/` — 所有可装的产物
+- `scripts/` — 安装 + 诊断 + 卸载 + 同步
+- `examples/` — 非通用模板（**不会装**），供参考
+- `tests/` — 单元 + sandbox 集成
+- `README.md` — 5 分钟上手 + Q&A（中文）
+- `README.en.md` — 英文版

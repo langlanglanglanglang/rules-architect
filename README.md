@@ -1,218 +1,218 @@
-**English** | [中文](README.zh.md)
-
-> See also: [How does this compare to the official claude-md-improver?](docs/comparison-vs-claude-md-improver.md)
-
-**TL;DR install**: `curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — see [Quick install](#quick-install-one-liner) for mode options.
-
 # rules-architect
 
-> Self-improving rule architecture for Claude Code. Install 4 hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
+**中文** | [English](README.en.md)
 
-## What's in the box
+> 另见：[与官方 claude-md-improver 的对比](docs/comparison-vs-claude-md-improver.md)
 
-| Component | Purpose | Generic? |
+**一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 模式选项详见[一键安装](#一键安装)节。
+
+> Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
+
+## 安装包含什么
+
+| 组件 | 用途 | 通用？ |
 |---|---|---|
-| 3 core hooks | SOP injection + base infrastructure (memory_intake / rule_intake / cleanup) | ✅ Universal |
-| 1 path-scoped rule (`rule-intake.md`) | Inject SOP when editing rule files | ✅ |
-| §六 template for `CLAUDE-personal.md` | Upgrade / retire / team sync flows | ✅ |
-| `memory_sync.py` | Push memory → team lessons (single direction) | ✅ Parametrized |
-| `cleanup_hook.py` | SessionStart cleanup (lock TTL + audit rotation) | ✅ |
-| `examples/` | Non-generic project rules for inspiration | NOT installed |
+| 3 个核心 hook | SOP 注入 + 基础设施（memory_intake / rule_intake / cleanup） | ✅ 通用 |
+| 1 个 path-scoped rule (`rule-intake.md`) | 编辑规则文件时注入 SOP | ✅ |
+| `CLAUDE-personal.md` §六 模板 | 升级 / 退役 / 团队同步 流程 | ✅ |
+| `memory_sync.py` | 推送 memory → 团队 lessons（单向） | ✅ 参数化 |
+| `cleanup_hook.py` | SessionStart 清理（lock TTL + audit 轮转） | ✅ |
+| `examples/` | 项目特定规则示例（仅参考） | 不会安装 |
 
-## Why
+## 为什么需要它
 
-Default CC behavior: every nuance gets dumped to **L1 memory** because it's the most convenient layer. Consequences:
-- Memory bloats with rules that should be elsewhere
-- Team can't see your memory (private to user)
-- CLAUDE.md gets diluted in long sessions
-- Hook-pluckable rules left in memory keep getting forgotten
+CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。结果：
+- memory 被本该放别处的规则塞爆
+- 团队看不到你的 memory（用户私有）
+- 长会话中 CLAUDE.md 被稀释
+- 适合做 hook 的规则被留在 memory，反复忘掉
 
-This skill provides **3 layers of real-time interception** at the rule-writing moment.
-
-
-## Design philosophy: opinionated vs. universal
-
-This skill ships **only 3 core hooks** that encode the skill's methodology (5-Q SOP injection + base infrastructure) — not individual workflow preferences. Per-user workflow hooks (e.g. `error_recovery_checkpoint`, `dangerous_branch_reminder`) live in `examples/` for you to fork and customize.
-
-**Universal (installed by default)**:
-- `memory_intake_check.py` — intercepts memory writes with 5-Q SOP
-- `rule_intake_reminder.py` — intercepts user rule keywords with 5-Q SOP
-- `cleanup_hook.py` — SessionStart cleanup (lock TTL + audit rotation)
-
-**Opinionated (in `examples/`, copy + adapt)**:
-- `error_recovery_checkpoint.py.example` — force 3-line recovery report on tool error
-- `dangerous_branch_reminder.py.example` — warn on `git checkout <protected branch>`
-- `mr_created_reminder.py.example` — codeup MCP MR created → status summary
-- `extension-hook-skeleton.py` — minimal template for your own hook
-
-Migration of your existing memory entries to per-user hooks is handled by `install_hooks.py`'s interactive flow (after installing core 3) — see "Memory migration" section below.
+这套 skill 提供 **3 层规则写入瞬间的实时拦截**。
 
 
-## Quick install (one-liner)
+## 设计哲学：通用 vs 个人偏好
+
+本 skill **只默认装 3 个核心 hook**，编码的是 skill 方法论（5 问 SOP 注入 + 基础设施），**不**编码个人工作流偏好。个人工作流 hook（如 `error_recovery_checkpoint` / `dangerous_branch_reminder`）放在 `examples/`，需要时 fork + 改。
+
+**通用（默认装）**：
+- `memory_intake_check.py` — 拦截 memory 写入，注入 5 问 SOP
+- `rule_intake_reminder.py` — 拦截用户规则关键词，注入 5 问 SOP
+- `cleanup_hook.py` — SessionStart 清理（lock TTL + audit 轮转）
+
+**个人偏好（在 `examples/`，按需 fork）**：
+- `error_recovery_checkpoint.py.example` — tool 错误时强制三行汇报
+- `dangerous_branch_reminder.py.example` — `git checkout <受保护分支>` 提醒
+- `mr_created_reminder.py.example` — codeup MCP MR 创建时输出汇总
+- `extension-hook-skeleton.py` — 自定义 hook 起步模板
+
+把你**自己已有**的 memory 规则升级到 hook，由 `install_hooks.py` 装好核心 3 hook 后的交互流程处理。
+
+
+## 一键安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
 ```
 
-This clones the repo to `~/.claude/skills/rules-architect/` and installs the 3 core hooks (mode B, safest default).
+该命令 clone 仓库到 `~/.claude/skills/rules-architect/` 并装 3 个核心 hook（默认 mode B，最安全）。
 
-For more control:
+更多控制：
 ```bash
-# Diagnose only — no changes
+# 仅诊断 — 不动任何文件
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
 
-# Full install (hooks + rule-intake + §六)
+# 全装（hook + rule-intake + §六）
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode A
 
-# Custom install location
+# 自定义安装位置
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
-# Pin to a specific tag
+# 指定 tag 版本
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.1.1
 ```
 
-### Or manual install (more transparent)
+### 或者手动装（更透明）
 ```bash
 git clone https://github.com/langlanglanglanglang/rules-architect.git ~/.claude/skills/rules-architect
 python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 ```
 
-## Requirements
+## 要求
 
-- **Claude Code >= 1.5.0** (UserPromptSubmit hook required)
+- **Claude Code >= 1.5.0**（依赖 UserPromptSubmit hook）
 - Python 3.7+
-- macOS / Linux fully supported; Windows partial (see Cross-platform section)
+- macOS / Linux 完整支持；Windows 部分支持（见跨平台节）
 
-## 5-minute getting started
+## 5 分钟上手
 
 ```bash
-# 1. Trigger skill in any CC session
+# 1. 任何 CC 会话中触发 skill
 /rules-architect
 
-# 2. Choose mode D (diagnose only) for first run — SAFEST
-#    Reviews current state, suggests improvements, modifies nothing.
+# 2. 首次跑选 mode D（仅诊断）—— 最安全，不动任何文件
 
-# 3. After understanding the 5-layer model + SOP:
-#    Re-run with mode A (full install) or B/C for partial
+# 3. 看懂 5 层模型 + SOP 后：
+#    重跑选 mode A（全装）或 B / C（部分装）
 ```
 
+## 各模式行为
 
-## Content preservation guarantees
+| 模式 | 风险 | 改动文件 |
+|---|---|---|
+| D. 仅诊断 | 零 | 无 |
+| C. 仅 path-scoped | 极低 | `.claude/rules/rule-intake.md` |
+| B. 仅 hook | 低 | `~/.claude/settings.json` + `~/.claude/hooks/*.py` |
+| A. 全装 | 中 | B + 给你项目的 `CLAUDE-personal.md` 加 §六 |
+| E. 卸载 | — | 按 manifest 精确回滚 |
 
-This skill **never modifies your existing content** without explicit consent and manifest tracking:
 
-| Your data | Action |
+## 内容保护保证
+
+本 skill **从不修改**你已有的内容，除非明确同意且记录到 manifest：
+
+| 你的数据 | 处理 |
 |---|---|
-| L1 memory files | ✋ Never touched |
-| CLAUDE.md | ✋ Never touched |
-| CLAUDE-personal.md (§一~§五 etc) | ✋ Outside `<!-- rules-architect:section-6 BEGIN/END -->` markers: untouched |
-| Existing hooks in `~/.claude/settings.json` | ✋ Preserved via deep-merge with conflict detection |
-| Existing `.claude/rules/*.md` files | ✋ Only `rule-intake.md` is added (mode C/A) |
-| Files you locally modified | ✋ Skipped on hash mismatch (no overwrite or delete) |
+| L1 memory 文件 | ✋ 从不动 |
+| CLAUDE.md | ✋ 从不动 |
+| CLAUDE-personal.md（§一~§五 等） | ✋ 在 `<!-- rules-architect:section-6 BEGIN/END -->` markers **外**：从不动 |
+| `~/.claude/settings.json` 已有 hook | ✋ deep-merge 含冲突检测，全部保留 |
+| 已有的 `.claude/rules/*.md` | ✋ 只加 `rule-intake.md`（mode C/A） |
+| 你本地改过的文件 | ✋ hash 不一致 → 跳过（不覆盖、不删除） |
 
-What this skill **adds** (all tracked in `~/.claude/.rules-architect-manifest.json`):
-- 5 hook entries in `~/.claude/settings.json` (settings.json backed up to `.bak.<ts>` first)
-- 5 hook scripts in `~/.claude/hooks/`
-- Mode C / A: `<project>/.claude/rules/rule-intake.md`
-- Mode A only: §六 section in `<project>/CLAUDE-personal.md` (marker-protected for precise removal)
+本 skill **加了什么**（全部跟踪到 `~/.claude/.rules-architect-manifest.json`）：
+- `~/.claude/settings.json` 加 5 个 hook 入口（先备份 `.bak.<ts>`）
+- `~/.claude/hooks/` 加 5 个 hook 脚本
+- 模式 C / A：`<project>/.claude/rules/rule-intake.md`
+- 模式 A 独有：`<project>/CLAUDE-personal.md` 加 §六 节（marker 保护，便于精确移除）
 
-**Migration vs Modification**: `diagnose.py` **suggests** memory entries that could be upgraded to other layers (e.g. rhythm-related rules → L0 hook), but **never auto-moves anything**. All migration is human-triggered (see §六 Upgrade flow).
+**迁移 vs 修改**：`diagnose.py` **建议**哪些 memory 条目适合升级到其它层（如节奏类规则 → L0 hook），但**绝不自动迁移**。所有迁移由人工触发（见 §六 Upgrade 流程）。
 
-Uninstall is precise (per-manifest, hash-verified). Files you modified locally are never overwritten or deleted.
+卸载是精确的（按 manifest，hash 校验）。你本地修改过的文件**从不**被覆盖或删除。
 
-## What modes do
+## 5 层记忆模型
 
-| Mode | Risk | Files changed |
+| 层 | 内容 | 触发 |
 |---|---|---|
-| D. Diagnose | Zero | None |
-| C. Path-scoped only | Very low | `.claude/rules/rule-intake.md` |
-| B. Hooks only | Low | `~/.claude/settings.json` + `~/.claude/hooks/*.py` |
-| A. Full | Medium | All of B + `<your-project>/CLAUDE-personal.md` (adds §六) |
-| E. Uninstall | — | Precise rollback per manifest |
+| L0 hook | 实时脚本 | tool 调用前/后 |
+| L1 memory | 私人笔记 | CC 平台自动管理 |
+| L2 path-scoped | 项目规则 | 编辑匹配文件时 |
+| L3 CLAUDE.md | 团队基线 | 会话起点 |
+| L5 团队 lessons | 跨工具知识 | 手动 / 触发式 |
 
-## Architecture: 5-Layer Memory Model
+**关键洞察**：L0 + L2 是 **100% 可靠**（无注意力稀释）。L3 在长会话中被忘记。本 skill 推动规则归位向 L0/L2 偏移。
 
-| Layer | What | Trigger |
+## 本 skill 不做什么
+
+- ❌ **不是 CLAUDE.md 审计器** — 用 `claude-md-management:claude-md-improver`（Anthropic 官方插件）做 L3 审计
+- ❌ **不是项目特定** — 业务 hook（`mr_created_reminder` 等）放 `examples/`
+- ❌ **不支持 codex / gemini** — CC 专属。codex / gemini 替代方案见跨工具节
+
+## 配置
+
+安装后通过环境变量自定义：
+
+| 变量 | 默认 | 含义 |
 |---|---|---|
-| L0 hook | Real-time scripts | Tool call before/after |
-| L1 memory | Private notes | CC platform auto-manages |
-| L2 path-scoped | Project rules | Edit matching file |
-| L3 CLAUDE.md | Team baseline | Session start |
-| L5 team lessons | Cross-tool knowledge | Manual / triggered |
+| `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / 自定义正则 |
+| `PROTECTED_BRANCHES` | `develop\|test\|master` | 管道分隔的分支名 |
+| `LESSONS_PATH` | （无） | 团队 lessons.md 绝对路径 |
+| `MIN_CC_VERSION` | `1.5.0` | 低于此版本拒绝安装 |
+| `RA_TOKEN_EXTRA_PATHS` | （无） | diagnose token 估算时额外扫描的相对路径，逗号分隔 |
 
-**Key insight**: L0 + L2 are **100% reliable** (no attention dilution). L3 gets forgotten in long sessions. This skill pushes rule placement toward L0/L2.
+## 跨平台说明
 
-## What this skill is NOT
+- macOS / Linux：完整支持，遵循 `XDG_CACHE_HOME`
+- Windows：hook 通过 Python 工作；缓存路径用 `%LOCALAPPDATA%\Claude\cache`
+- WSL：按 Linux 处理
 
-- ❌ **Not a CLAUDE.md auditor** — use `claude-md-management:claude-md-improver` (official Anthropic plugin) for L3 audit
-- ❌ **Not project-specific** — `mr_created_reminder`, `wiki_publish_check`, business rules go in your project's `.claude/rules/` or `~/.claude/hooks/` directly, see `examples/`
-- ❌ **Not for codex/gemini** — CC-only. See Cross-tool section below
+## 跨工具（codex / gemini 等）
 
-## Configuration
+CC hook 不在 codex / gemini 上触发。对那些工作流：
+- L3 规则：放进 `AGENTS.md`（codex 读它；CC 通过 `@AGENTS.md` 读）
+- L0 等价物：pre-commit / githook 做分支保护
+- L5（团队 lessons）：纯 markdown，任何工具能读
 
-After install, customize via env vars or `~/.claude/.rules-architect-config.json`:
+详见 `examples/cross-tool-shim.md`。
 
-| Variable | Default | What |
-|---|---|---|
-| `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / custom regex |
-| `PROTECTED_BRANCHES` | `develop\|test\|master` | Pipe-separated branch names |
-| `LESSONS_PATH` | (none) | Absolute path to team lessons.md |
-| `MIN_CC_VERSION` | `1.5.0` | Refuse install below this |
-
-## Cross-platform notes
-
-- macOS / Linux: full support, `XDG_CACHE_HOME` respected
-- Windows: hooks work via Python; `~/.cache` path uses `%LOCALAPPDATA%\\Claude\\cache`
-- WSL: treat as Linux
-
-## Cross-tool (codex / gemini / etc)
-
-CC hooks don't fire in codex / gemini. For those workflows:
-- L3 rules: put in `AGENTS.md` (codex reads it; CC reads via `@AGENTS.md`)
-- L0 equivalent: pre-commit / githook for branch protection
-- L5 (team lessons): pure markdown, works for any tool
-
-See `examples/cross-tool-shim.md` for details.
-
-## Uninstall
+## 卸载
 
 ```bash
 python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
 ```
 
-Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
-1. Removes each installed file (verified by hash)
-2. Removes only the hook entries this skill added from `settings.json`
-3. Restores `~/.claude/settings.json.bak.<ts>` only if user explicitly opts in
+卸载会读 `~/.claude/.rules-architect-manifest.json`：
+1. 移除每个已装文件（hash 校验）
+2. 只删本 skill 添加的 hook 入口（保留你自己的其他 hook）
+3. 仅在用户显式选择时才恢复 settings.json 备份
 
-**Does NOT delete**:
-- Your own customizations to installed files (hash mismatch → skip with warning)
-- Project-level `.claude/rules/rule-intake.md` (manual delete required to avoid accidental cleanup)
-- Any L1 memory files (they're yours)
+**不会删**：
+- 你对装好文件的本地修改（hash 不一致 → 跳过并 warn）
+- 项目级 `.claude/rules/rule-intake.md`（需手动删，避免误清理）
+- 任何 L1 memory 文件（属于你的）
 
 ## Q&A
 
-**Q: Will the hooks slow down CC?**
-A: Each hook adds ~10-20ms; 4 hooks total < 100ms. Dedupe ensures same reminder fires once per session.
+**Q：hook 会拖慢 CC 吗？**
+A：每个 hook ~10-20ms；4 个合计 < 100ms。dedupe 保证同 reminder 一个会话只发一次。
 
-**Q: What if I already have hooks installed?**
-A: `install_hooks.py` does deep-merge with conflict detection. If a same-matcher hook exists, you'll be prompted: append / skip / replace.
+**Q：我已经装了别的 hook 怎么办？**
+A：`install_hooks.py` 做 deep-merge 含冲突检测。同 matcher 下已有 hook 时提示你选 append / skip / replace。
 
-**Q: How do I know hooks are firing?**
-A: Check `~/.cache/claude-hooks/audit.jsonl`:
+**Q：怎么知道 hook 在生效？**
+A：看 `~/.cache/claude-hooks/audit.jsonl`：
 ```bash
 jq -c 'select(.decision == "inject")' ~/.cache/claude-hooks/audit.jsonl | tail
 ```
 
-**Q: How do I update to a newer version?**
-A: Re-run `/rules-architect`. The skill compares manifest hashes and shows you what would change.
+**Q：如何升级到新版本？**
+A：重跑 `/rules-architect`。skill 会比对 manifest hash 显示会变化的内容。
 
-**Q: Can I use this with other CLAUDE.md tools?**
-A: Yes, especially `claude-md-management:claude-md-improver` (this skill delegates L3 audit to it). Other compatible tools listed in SKILL.md.
+**Q：能和别的 CLAUDE.md 工具配合吗？**
+A：可以，特别推荐 `claude-md-management:claude-md-improver`（本 skill 把 L3 审计委托给它）。其它兼容工具见 SKILL.md。
 
-## Reporting issues
+## 问题反馈
 
-The skill is at `~/.claude/skills/rules-architect/`. See `tests/` for reproducible test cases.
+skill 位置：`~/.claude/skills/rules-architect/`。可复现测试用例见 `tests/`。
 
-Audit log: `~/.cache/claude-hooks/audit.jsonl`
-Manifest: `~/.claude/.rules-architect-manifest.json`
+审计日志：`~/.cache/claude-hooks/audit.jsonl`
+Manifest：`~/.claude/.rules-architect-manifest.json`
