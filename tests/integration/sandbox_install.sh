@@ -142,6 +142,66 @@ case "$grade" in
 esac
 echo
 
+# === Step 7.5: Generated hook (install_hook_from_memory) + memory promotion ===
+echo ">>> Step 7.5: install_hook_from_memory + mark_memory_promoted"
+
+# Build a fake memory entry for the test
+mkdir -p "$HOME/.claude/projects/sandbox-test/memory"
+cat > "$HOME/.claude/projects/sandbox-test/memory/feedback_sandbox_test.md" <<MEMO_EOF
+---
+name: feedback-sandbox-test
+description: Sandbox test entry — should be marked promoted by mark_memory_promoted.py
+metadata:
+  type: feedback
+---
+Sandbox test rule body. After promotion, this stays in git history but
+the live file body should become a "Promoted to:" stub.
+MEMO_EOF
+
+# Write a reminder text file
+echo "Sandbox test reminder injected by generated hook." > "$TMP_HOME/sandbox-reminder.txt"
+
+# Install generated hook
+python3 "$SKILL_DIR/scripts/install_hook_from_memory.py" \
+    --name sandbox_test_hook \
+    --event UserPromptSubmit \
+    --matcher '*' \
+    --reminder-file "$TMP_HOME/sandbox-reminder.txt" \
+    --description "Sandbox test from memory" \
+    --feedback-source feedback_sandbox_test
+
+test -x "$HOME/.claude/hooks/sandbox_test_hook.py" || {
+    echo "  ❌ sandbox_test_hook.py missing"; exit 1
+}
+echo "  ✅ generated hook installed + executable"
+
+# Smoke test the generated hook
+echo '{"session_id":"smoke","prompt":"x"}' \
+    | python3 "$HOME/.claude/hooks/sandbox_test_hook.py" \
+    | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'Sandbox test reminder' in d['hookSpecificOutput']['additionalContext']"
+echo "  ✅ generated hook injects expected reminder"
+
+# Mark memory promoted
+python3 "$SKILL_DIR/scripts/mark_memory_promoted.py" \
+    --feedback feedback_sandbox_test \
+    --target "L0 hook ~/.claude/hooks/sandbox_test_hook.py" \
+    --memory-dir "$HOME/.claude/projects/sandbox-test/memory"
+
+grep -q "Promoted to:" "$HOME/.claude/projects/sandbox-test/memory/feedback_sandbox_test.md" || {
+    echo "  ❌ memory body not converted to stub"; exit 1
+}
+echo "  ✅ memory body converted to Promoted-to stub"
+
+# Verify manifest knows about the generated hook
+python3 -c "
+import json
+m = json.load(open('$HOME/.claude/.rules-architect-manifest.json'))
+gen = [f for f in m['installed_files'] if f.get('kind') == 'generated-from-memory']
+assert len(gen) >= 1, 'manifest missing generated-from-memory entry'
+print('  ✅ manifest tracks generated hook (kind=generated-from-memory)')
+"
+echo
+
 # === Step 8: Uninstall (dry-run + real) ===
 echo ">>> Step 8a: uninstall.py --dry-run"
 python3 "$SKILL_DIR/scripts/uninstall.py" --dry-run --non-interactive

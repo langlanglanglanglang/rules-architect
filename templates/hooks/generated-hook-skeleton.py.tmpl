@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""
+{{DESCRIPTION}}
+
+Generated from memory entry: {{FEEDBACK_SOURCE}}
+By rules-architect skill v{{SKILL_VERSION}}
+
+Event:   {{EVENT}}
+Matcher: {{MATCHER}}
+
+This hook was derived from one of your L1 memory rules and promoted to L0
+for 100% reliable real-time interception. Original memory entry is now a stub
+pointing here (see ~/.claude/projects/.../memory/{{FEEDBACK_SOURCE}}.md).
+
+Dedupe: per-session lock
+Audit:  ~/.cache/claude-hooks/audit.jsonl
+"""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+HOOK_NAME = "{{NAME}}"
+
+
+def get_cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "claude-hooks"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Claude" / "cache" / "claude-hooks"
+    return Path.home() / ".cache" / "claude-hooks"
+
+
+CACHE = get_cache_dir()
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+REMINDER = """{{REMINDER}}"""
+
+
+def log_audit(decision: str, **kwargs) -> None:
+    rec = {"ts": time.time(), "hook": HOOK_NAME, "decision": decision, **kwargs}
+    try:
+        with open(CACHE / "audit.jsonl", "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def main() -> int:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+
+    session_id = data.get("session_id", "unknown")
+
+    lock = CACHE / f"{HOOK_NAME}-{session_id}.lock"
+    if lock.exists():
+        log_audit("dedupe-skip", session=session_id)
+        return 0
+    lock.touch()
+
+    output = {"hookSpecificOutput": {"additionalContext": REMINDER}}
+    print(json.dumps(output, ensure_ascii=False))
+    log_audit("inject", session=session_id)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

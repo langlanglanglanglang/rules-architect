@@ -50,50 +50,106 @@ Walk these 5 questions **before** writing any new rule:
 
 **FORBIDDEN**: Skip the 5 questions and default to L1 memory. This is the biggest source of leakage.
 
-## 5-Step Installation Flow
+## 5-Step Execution Flow (orchestrated by the main agent in your CC session)
 
-When user triggers `/rules-architect`:
+This skill is invoked by the user via `/rules-architect`. The **main agent** (the Claude in your CC session) orchestrates these 5 steps — NOT a single Python script. Memory migration requires semantic judgment that only the agent can provide.
 
-### Step 1: Diagnose (safe, no file changes)
+### Step 1: Diagnose (no changes)
 
-Run `scripts/diagnose.py`:
-- Map current architecture per layer
-- Grade each rule with reason (placement mismatch / duplicate / stale)
-- **Delegate L3 (CLAUDE.md audit) to `claude-md-management:claude-md-improver`** if plugin enabled
-- Output: structured JSON report + human-readable summary
+```bash
+python3 scripts/diagnose.py --json > /tmp/ra-before.json
+```
 
-### Step 2: Present model + SOP
+Show user the structured report including the **memory upgrade candidates table** with `recommended_target` + `reason` per entry.
 
-Show user 5-layer model + 5-question SOP for buy-in.
+### Step 2: Present 5-layer model + 5-Q SOP
 
-### Step 3: Choose install mode
+Display the architecture and SOP. Briefly explain what migrating a memory entry to L0 hook means (continuous interception vs L1 advisory).
 
-| Mode | What it does | Risk |
-|---|---|---|
-| **D. Diagnose only** (default for first run) | No file changes | Zero |
-| **C. Path-scoped only** | `.claude/rules/rule-intake.md` + nothing else | Very low |
-| **B. Hooks only** | 4 hooks + settings.json merge + manifest | Low (backup + manifest) |
-| **A. Full install** | All of B + rule-intake + §六 to CLAUDE-personal.md | Medium (changes 3+ files) |
-| **E. Uninstall** | Roll back per manifest | — |
+### Step 3: Mode selection
+
+| Mode | What |
+|---|---|
+| **D**. Diagnose only | No changes (safest first run) |
+| **C**. Path-scoped only | Add `rule-intake.md` to current project |
+| **B**. Hooks only | Install 3 core hooks (memory_intake / rule_intake / cleanup) |
+| **A**. Full install | All of B + rule-intake + §六 + interactive memory migration |
+| **E**. Uninstall | Roll back per manifest |
 
 ### Step 4: Execute
 
-For chosen mode:
-1. `claude --version` check (fail if < min supported)
-2. Backup `~/.claude/settings.json.bak.<ts>`
-3. Copy templates with variable substitution
-4. JSON deep-merge into settings.json (atomic: tmp → rename)
-5. Update `~/.claude/.rules-architect-manifest.json`
-6. Dry-run each hook with stub JSON
-7. Report: command summary + audit.jsonl path + min CC version
+#### 4a. Install core 3 hooks (modes B / A)
 
-### Step 5: Configure
+```bash
+python3 scripts/install_hooks.py --non-interactive
+```
 
-User customizes:
-- `RULE_INTAKE_KEYWORDS` (Chinese / English preset)
-- `PROTECTED_BRANCHES` (default `develop|test|master`)
-- `LESSONS_PATH` for team sync
-- Project-specific rules in `.claude/rules/`
+Installs only the 3 universal hooks. Opinionated workflow hooks (error_recovery, dangerous_branch) live in `examples/` for the user to fork.
+
+#### 4b. Memory migration loop (mode A; optional in B)
+
+Read the `upgrade_candidates` from Step 1. **For each candidate**:
+
+1. Ask user: *"Promote `<feedback_name>`? (suggested target: `<target>`, because: `<reason>`) [y/N]"*
+2. If yes:
+   - **Read** the full memory body
+   - **Synthesize** a concise reminder text (you, the main agent, do semantic distillation — extract the action/constraint to inject at intercept time; keep < 500 chars, self-contained, no external doc references)
+   - **Decide** hook event + matcher:
+     - rhythm keyword + no specific tool → typically `UserPromptSubmit` + `*`
+     - tied to specific tool (commit / MR / etc) → that tool's PostToolUse
+     - "L3 CLAUDE.md" recommendation → SKIP hook, suggest user write rule to CLAUDE.md
+   - **Write** reminder to `/tmp/<feedback_name>-reminder.txt`
+   - **Install** the hook:
+     ```bash
+     python3 scripts/install_hook_from_memory.py \
+         --name <stem> \
+         --event <event> \
+         --matcher '<matcher>' \
+         --reminder-file /tmp/<feedback_name>-reminder.txt \
+         --description "<one-line>" \
+         --feedback-source <feedback_name>
+     ```
+   - **Mark memory promoted** (replaces body with stub, preserves frontmatter + git history):
+     ```bash
+     python3 scripts/mark_memory_promoted.py \
+         --feedback <feedback_name> \
+         --target "L0 hook ~/.claude/hooks/<stem>.py"
+     ```
+
+#### 4c. Add rule-intake.md (modes C / A)
+
+```bash
+python3 scripts/install_rule_intake.py
+```
+
+#### 4d. Add §六 to CLAUDE-personal.md (mode A only)
+
+```bash
+python3 scripts/install_personal_md_section.py --create-if-missing
+```
+
+### Step 5: Diagnose after + before/after summary
+
+```bash
+python3 scripts/diagnose.py --json > /tmp/ra-after.json
+```
+
+Show user a structured diff:
+- L0 hooks count (before → after)
+- L1 candidates remaining (before → after, with which were promoted)
+- Token estimate (before → after)
+- Files added / modified / preserved
+- Per-migration outcomes ("feedback_X → L0 hook ~/.claude/hooks/X.py")
+
+---
+
+### Main agent guardrails
+
+- **Always run Step 1 first** before any modification
+- **Never** auto-migrate without explicit per-candidate user consent
+- **Concise reminders**: < 500 chars, self-contained, do not reference external sections
+- **If matcher is uncertain**: show the user a draft + ask before installing
+- **Step 5 must show before/after** so user sees impact
 
 ## What This Skill Provides
 

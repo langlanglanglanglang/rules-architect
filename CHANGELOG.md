@@ -4,6 +4,42 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.0] — 2026-06-12
+
+### Added
+
+- **`install_hook_from_memory.py`** — programmatic hook installer called by
+  the main agent during the 5-step flow. Takes `--name`, `--event`,
+  `--matcher`, `--reminder-file`, `--description`, `--feedback-source` and
+  generates a fully wired hook (file + settings.json entry + manifest).
+- **`mark_memory_promoted.py`** — replaces memory feedback body with a
+  `Promoted to: <target> @ <date>` stub, preserving YAML frontmatter and the
+  original body in git history.
+- **`templates/hooks/generated-hook-skeleton.py.tmpl`** — base skeleton used
+  by `install_hook_from_memory.py`; contains placeholders for name, event,
+  matcher, reminder text, description, and feedback source.
+
+### Changed
+
+- **SKILL.md 5-Step Execution Flow** rewritten from the main-agent
+  perspective. Memory migration is now integrated as Step 4b of the
+  orchestrated flow — the main agent reads candidates from `diagnose.py`,
+  asks the user per candidate, distills the reminder text from memory body,
+  and calls the two new scripts.
+- **`tests/integration/sandbox_install.sh`** — added Step 7.5 that
+  exercises `install_hook_from_memory.py` and `mark_memory_promoted.py`
+  end-to-end (creates a fake memory entry, installs generated hook, runs
+  smoke test, verifies stub replacement and manifest tracking).
+
+### Rationale
+
+Prior to v2.1.0, memory parsing → migration would have required a separate
+`migrate.py` script. That fragmented the natural flow (diagnose suggests →
+install enacts). The two new scripts are designed to be called BY THE MAIN
+AGENT, not directly by the user — the agent does the semantic distillation
+(reading memory body → crafting concise reminder text → deciding matcher)
+that a pure Python script can't.
+
 ## [2.0.0] — 2026-06-12
 
 ### BREAKING CHANGES
