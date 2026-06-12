@@ -47,7 +47,6 @@ CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。
 
 把你**自己已有**的 memory 规则升级到 hook，由 `install_hooks.py` 装好核心 3 hook 后的交互流程处理。
 
-
 ## 一键安装
 
 ```bash
