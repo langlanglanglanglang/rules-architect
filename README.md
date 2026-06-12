@@ -45,6 +45,36 @@ This skill ships **only 3 core hooks** that encode the skill's methodology (5-Q 
 
 Migration of your existing memory entries to per-user hooks is handled by `install_hooks.py`'s interactive flow (after installing core 3) — see "Memory migration" section below.
 
+
+## Quick install (one-liner)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
+```
+
+This clones the repo to `~/.claude/skills/rules-architect/` and installs the 3 core hooks (mode B, safest default).
+
+For more control:
+```bash
+# Diagnose only — no changes
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
+
+# Full install (hooks + rule-intake + §六)
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode A
+
+# Custom install location
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
+
+# Pin to a specific tag
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.1.1
+```
+
+### Or manual install (more transparent)
+```bash
+git clone https://github.com/langlanglanglanglang/rules-architect.git ~/.claude/skills/rules-architect
+python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
+```
+
 ## Requirements
 
 - **Claude Code >= 1.5.0** (UserPromptSubmit hook required)

@@ -45,6 +45,36 @@ CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。
 
 把你**自己已有**的 memory 规则升级到 hook，由 `install_hooks.py` 装好核心 3 hook 后的交互流程处理。
 
+
+## 一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
+```
+
+该命令 clone 仓库到 `~/.claude/skills/rules-architect/` 并装 3 个核心 hook（默认 mode B，最安全）。
+
+更多控制：
+```bash
+# 仅诊断 — 不动任何文件
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
+
+# 全装（hook + rule-intake + §六）
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode A
+
+# 自定义安装位置
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
+
+# 指定 tag 版本
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.1.1
+```
+
+### 或者手动装（更透明）
+```bash
+git clone https://github.com/langlanglanglanglang/rules-architect.git ~/.claude/skills/rules-architect
+python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
+```
+
 ## 要求
 
 - **Claude Code >= 1.5.0**（依赖 UserPromptSubmit hook）
