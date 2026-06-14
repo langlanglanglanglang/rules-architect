@@ -6,7 +6,7 @@
 
 # rules-architect
 
-> Self-improving rule architecture for Claude Code. Install 4 hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
+> Self-improving rule architecture for Claude Code. Install 3 core hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
 
 ## What's in the box
 
@@ -16,7 +16,6 @@
 | 1 path-scoped rule (`rule-intake.md`) | Inject SOP when editing rule files | ✅ |
 | §六 template for `CLAUDE-personal.md` | Upgrade / retire / team sync flows | ✅ |
 | `memory_sync.py` | Push memory → team lessons (single direction) | ✅ Parametrized |
-| `cleanup_hook.py` | SessionStart cleanup (lock TTL + audit rotation) | ✅ |
 | `examples/` | Non-generic project rules for inspiration | NOT installed |
 
 ## Why
@@ -45,7 +44,7 @@ This skill ships **only 3 core hooks** that encode the skill's methodology (5-Q 
 - `mr_created_reminder.py.example` — codeup MCP MR created → status summary
 - `extension-hook-skeleton.py` — minimal template for your own hook
 
-Migration of your existing memory entries to per-user hooks is handled by `install_hooks.py`'s interactive flow (after installing core 3) — see "Memory migration" section below.
+Migration of your existing memory entries to per-user hooks is orchestrated by the main agent following SKILL.md Step 4b — triggered after the core 3 hooks are installed.
 
 
 ## Quick install (one-liner)
@@ -111,8 +110,8 @@ This skill **never modifies your existing content** without explicit consent and
 | Files you locally modified | ✋ Skipped on hash mismatch (no overwrite or delete) |
 
 What this skill **adds** (all tracked in `~/.claude/.rules-architect-manifest.json`):
-- 5 hook entries in `~/.claude/settings.json` (settings.json backed up to `.bak.<ts>` first)
-- 5 hook scripts in `~/.claude/hooks/`
+- 3 hook entries in `~/.claude/settings.json` (settings.json backed up to `.bak.<ts>` first)
+- 3 hook scripts in `~/.claude/hooks/`
 - Mode C / A: `<project>/.claude/rules/rule-intake.md`
 - Mode A only: §六 section in `<project>/CLAUDE-personal.md` (marker-protected for precise removal)
 
@@ -158,6 +157,7 @@ After install, customize via env vars or `~/.claude/.rules-architect-config.json
 | `PROTECTED_BRANCHES` | `develop\|test\|master` | Pipe-separated branch names |
 | `LESSONS_PATH` | (none) | Absolute path to team lessons.md |
 | `MIN_CC_VERSION` | `1.5.0` | Refuse install below this |
+| `RA_TOKEN_EXTRA_PATHS` | (none) | Comma-separated relative paths for diagnose token estimation to scan in addition |
 
 ## Cross-platform notes
 
@@ -193,7 +193,7 @@ Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
 ## Q&A
 
 **Q: Will the hooks slow down CC?**
-A: Each hook adds ~10-20ms; 4 hooks total < 100ms. Dedupe ensures same reminder fires once per session.
+A: Each hook adds ~10-20ms; 3 hooks total < 100ms. Dedupe ensures same reminder fires once per session.
 
 **Q: What if I already have hooks installed?**
 A: `install_hooks.py` does deep-merge with conflict detection. If a same-matcher hook exists, you'll be prompted: append / skip / replace.
