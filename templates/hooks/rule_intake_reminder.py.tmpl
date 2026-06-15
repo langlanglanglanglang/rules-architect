@@ -154,7 +154,7 @@ def main() -> int:
     lock.touch()
 
     reminder = REMINDER_TEMPLATE.format(match=m.group(0))
-    output = {"hookSpecificOutput": {"additionalContext": reminder}}
+    output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": reminder}}
     print(json.dumps(output, ensure_ascii=False))
     log_audit("rule_intake_reminder", "inject",
               session=session_id, match=m.group(0), preset=keyword_choice)

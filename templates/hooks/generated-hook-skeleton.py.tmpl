@@ -68,7 +68,7 @@ def main() -> int:
         return 0
     lock.touch()
 
-    output = {"hookSpecificOutput": {"additionalContext": REMINDER}}
+    output = {"hookSpecificOutput": {"hookEventName": "{{EVENT}}", "additionalContext": REMINDER}}
     print(json.dumps(output, ensure_ascii=False))
     log_audit("inject", session=session_id)
     return 0

@@ -103,7 +103,7 @@ def main() -> int:
         return 0
     lock.touch()
 
-    output = {"hookSpecificOutput": {"additionalContext": REMINDER}}
+    output = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": REMINDER}}
     print(json.dumps(output, ensure_ascii=False))
     log_audit("memory_intake_check", "inject",
               session=session_id, path=file_path)
