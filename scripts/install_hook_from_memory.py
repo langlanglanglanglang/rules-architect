@@ -162,10 +162,14 @@ def main():
     # unparseable — the later merge would fail, leaving an untracked file.
     if SETTINGS_PATH.exists():
         try:
-            json.loads(SETTINGS_PATH.read_text())
+            _cfg = json.loads(SETTINGS_PATH.read_text())
         except Exception as e:
             err(f"settings.json is present but not valid JSON ({e}). "
                 "Fix it first so install stays atomic.")
+            return 4
+        if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
+            err("settings.json has an unexpected shape (root object with an "
+                "object 'hooks' required). Fix it first.")
             return 4
 
     if args.dry_run:

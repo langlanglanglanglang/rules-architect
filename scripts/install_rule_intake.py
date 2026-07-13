@@ -149,7 +149,25 @@ def main() -> int:
     if dest_path.exists():
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
-            ok("Already installed with identical content — nothing to do")
+            ok("Already installed with identical content")
+            # Adopt into the manifest if untracked (e.g. manifest lost/reset),
+            # so uninstall can still remove this file later.
+            if not args.dry_run:
+                manifest = load_manifest()
+                if not any(f.get("path") == str(dest_path)
+                           for f in manifest.get("installed_files", [])):
+                    manifest.setdefault("installed_files", []).append({
+                        "path": str(dest_path),
+                        "hash_sha256": rendered_hash,
+                        "owner": "rules-architect",
+                        "template_version": SKILL_VERSION,
+                        "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "kind": "rule-intake",
+                        "project_root": str(project_root),
+                    })
+                    manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    save_manifest(manifest)
+                    ok("Adopted into manifest (was untracked)")
             return 0
         if not args.force:
             warn(f"{dest_path} exists with different content. "

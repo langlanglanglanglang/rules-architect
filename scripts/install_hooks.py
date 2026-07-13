@@ -367,6 +367,14 @@ def merge_settings(
             ]
             if command in commands_in_entry:
                 info(f"settings.json: {event}/{matcher} already has our command, skip")
+                # Adopt: if the registration is present but untracked (manifest
+                # was lost/reset), record it so uninstall won't leave it dangling.
+                tracked = manifest.setdefault("settings_hooks_added", [])
+                if not any(e.get("event") == event and e.get("matcher") == matcher
+                           and e.get("command") == command for e in tracked):
+                    tracked.append({"event": event, "matcher": matcher,
+                                    "command": command, "owner": "rules-architect"})
+                    info(f"settings.json: {event}/{matcher} adopted into manifest")
                 continue
             # Different command at same matcher — conflict
             if force:
@@ -617,10 +625,15 @@ def main() -> int:
     # (merge would fail after files are already written), breaking rollback.
     if SETTINGS_PATH.exists():
         try:
-            json.loads(SETTINGS_PATH.read_text())
+            _cfg = json.loads(SETTINGS_PATH.read_text())
         except Exception as e:
             err(f"settings.json is present but not valid JSON ({e}). "
                 "Fix it first so install stays atomic and rollback precise.")
+            return 2
+        if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
+            err("settings.json has an unexpected shape (root must be an object "
+                "with an object 'hooks'). Fix it first so the merge can't fail "
+                "mid-install after files are written.")
             return 2
 
     # 2. Backup

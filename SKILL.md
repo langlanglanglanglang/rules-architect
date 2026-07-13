@@ -202,8 +202,8 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 
 **新增（经同意）**：
 
-- `~/.claude/hooks/` 内至多 5 个 hook 脚本
-- `~/.claude/settings.json` 内至多 5 个 hook 注册项（推送前先备份）
+- `~/.claude/hooks/` 内 3 个核心 hook 脚本（外加你主动从 memory 升级的）
+- `~/.claude/settings.json` 内对应的 hook 注册项（推送前先备份）
 - 模式 C/A：`.claude/rules/rule-intake.md`
 - 模式 A：`CLAUDE-personal.md` 的 §六 节（marker 保护）
 
@@ -287,7 +287,7 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 2. **结果**（成功/失败 + 详情）
 3. **下一步动作**（失败时停下）
 
-失败会通过 manifest 自动回滚。
+目标配置损坏时,pre-flight 校验会在写任何文件**之前**中止;其余失败场景按 manifest 用 uninstall 精准回滚(并非自动事务,中途失败请查 manifest)。
 
 ## 引用
 

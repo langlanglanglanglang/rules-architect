@@ -306,6 +306,18 @@ def install_hook_file(
     return "ok"
 
 
+def _adopt_registration(manifest: dict, event, matcher, command) -> None:
+    """Record an already-present hooks.json registration into the manifest if
+    it isn't tracked yet (e.g. the manifest was lost/reset), so uninstall won't
+    leave a dangling entry after deleting the script."""
+    tracked = manifest.setdefault("codex_hooks_added", [])
+    if not any(e.get("event") == event and e.get("matcher") == matcher
+               and e.get("command") == command for e in tracked):
+        tracked.append({"event": event, "matcher": matcher,
+                        "command": command, "owner": "rules-architect"})
+        info(f"hooks.json: {event} adopted into manifest")
+
+
 # === hooks.json deep-merge ===
 def merge_hooks_json(
     manifest: dict,
@@ -358,6 +370,7 @@ def merge_hooks_json(
             if any(h.get("command") == command
                    for e in hooks_section[event] for h in e.get("hooks", [])):
                 info(f"hooks.json: {event} already has our command, skip")
+                _adopt_registration(manifest, event, matcher, command)
                 continue
             if hooks_section[event]:
                 hooks_section[event][0].setdefault("hooks", []).append(
@@ -393,6 +406,7 @@ def merge_hooks_json(
             ]
             if command in commands_in_entry:
                 info(f"hooks.json: {event}/{matcher} already has our command, skip")
+                _adopt_registration(manifest, event, matcher, command)
                 continue
             if force:
                 existing_entry.setdefault("hooks", []).append(
@@ -580,10 +594,15 @@ def main() -> int:
     # (merge would fail after files are already written), breaking rollback.
     if HOOKS_JSON.exists():
         try:
-            json.loads(HOOKS_JSON.read_text())
+            _cfg = json.loads(HOOKS_JSON.read_text())
         except Exception as e:
             err(f"hooks.json is present but not valid JSON ({e}). "
                 "Fix it first so install stays atomic and rollback precise.")
+            return 2
+        if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
+            err("hooks.json has an unexpected shape (root must be an object "
+                "with an object 'hooks'). Fix it first so the merge can't fail "
+                "mid-install after files are written.")
             return 2
 
     backup_path = backup_hooks_json(args.dry_run)

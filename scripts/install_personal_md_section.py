@@ -99,6 +99,28 @@ def save_manifest(m: dict) -> None:
     atomic_write(MANIFEST_PATH, json.dumps(m, indent=2, ensure_ascii=False))
 
 
+def record_section(target: Path, section_hash: str, action: str) -> None:
+    """Upsert this target's §六 entry into the manifest (used both for a fresh
+    install and to adopt an already-present pristine block after manifest loss)."""
+    manifest = load_manifest()
+    manifest.setdefault("personal_md_sections", [])
+    manifest["personal_md_sections"] = [
+        s for s in manifest["personal_md_sections"] if s.get("file") != str(target)
+    ]
+    manifest["personal_md_sections"].append({
+        "file": str(target),
+        "marker_begin": MARKER_BEGIN,
+        "marker_end": MARKER_END,
+        "section_hash": section_hash,
+        "owner": "rules-architect",
+        "template_version": SKILL_VERSION,
+        "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "action": action,
+    })
+    manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    save_manifest(manifest)
+
+
 def render_section(cache_dir: str, protected_branches: str) -> str:
     raw = TEMPLATE_PATH.read_text()
     section_body = (
@@ -207,10 +229,19 @@ def main() -> int:
             rec = recorded_section_hash(target, args.dry_run)
             cur = extract_block(existing)
             if cur is not None and rec is None:
-                # Markers exist but no manifest record (missing/corrupt manifest):
-                # we cannot prove the block is unedited, so don't overwrite blindly.
+                if text_sha256(cur) == rendered_hash:
+                    # Markers present, manifest lost, but the block is pristine
+                    # (identical to a fresh render) → safe to adopt into manifest
+                    # instead of refusing, so uninstall can remove it later.
+                    if not args.dry_run:
+                        record_section(target, rendered_hash, "adopted")
+                    ok(f"§六 present in {target.name} & matches template — adopted "
+                       "into manifest")
+                    return 0
+                # Markers exist, no record, and block differs from template:
+                # can't prove it's safe, so don't overwrite blindly.
                 warn(f"§六 markers present in {target.name} but no manifest record "
-                     "to verify against — refusing to overwrite. Use --force to replace.")
+                     "and block differs from template — refusing. Use --force.")
                 return 1
             if cur is not None and rec is not None and text_sha256(cur) != rec:
                 warn(f"§六 block in {target.name} was modified since install "

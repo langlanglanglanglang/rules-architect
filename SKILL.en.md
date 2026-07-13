@@ -195,8 +195,8 @@ This skill **never modifies your existing content** without explicit consent. Al
 - Files you've modified locally (hash mismatch → skipped with warning)
 
 **Added (with consent)**:
-- Up to 5 hook scripts in `~/.claude/hooks/`
-- Up to 5 hook entries in `~/.claude/settings.json` (backed up first)
+- 3 core hook scripts in `~/.claude/hooks/` (plus any you opt to promote from memory)
+- Matching hook entries in `~/.claude/settings.json` (backed up first)
 - Mode C/A: `.claude/rules/rule-intake.md`
 - Mode A: §六 section in `CLAUDE-personal.md` (marker-protected)
 
@@ -223,11 +223,10 @@ This skill **never modifies your existing content** without explicit consent. Al
 │   └── memory_sync.py                    # Memory → team lessons (push only)
 ├── templates/
 │   ├── hooks/
-│   │   ├── error_recovery_checkpoint.py.tmpl
 │   │   ├── memory_intake_check.py.tmpl
 │   │   ├── rule_intake_reminder.py.tmpl  # {{RULE_INTAKE_KEYWORDS}}
-│   │   ├── dangerous_branch_reminder.py.tmpl  # {{PROTECTED_BRANCHES}}
-│   │   └── cleanup_hook.py.tmpl
+│   │   ├── cleanup_hook.py.tmpl
+│   │   └── generated-hook-skeleton.py.tmpl  # {{REMINDER_JSON}} etc.
 │   ├── rules/
 │   │   └── rule-intake.md.tmpl
 │   ├── personal-section-6.md.tmpl
@@ -251,13 +250,13 @@ This skill **never modifies your existing content** without explicit consent. Al
 {
   "skill_version": "1.0.0",
   "installed_at": "2026-06-12T...",
-  "files": [
-    {"path": "~/.claude/hooks/error_recovery_checkpoint.py",
-     "hash": "sha256...", "owner": "rules-architect", "version": "1.0.0"}
+  "installed_files": [
+    {"path": "~/.claude/hooks/memory_intake_check.py",
+     "hash_sha256": "sha256...", "owner": "rules-architect", "template_version": "1.0.0"}
   ],
   "settings_hooks_added": [
-    {"event": "PostToolUse", "matcher": "Edit|Write|Bash|MultiEdit",
-     "command": "python3 ~/.claude/hooks/error_recovery_checkpoint.py"}
+    {"event": "PreToolUse", "matcher": "Write|Edit|MultiEdit",
+     "command": "python3 ~/.claude/hooks/memory_intake_check.py"}
   ]
 }
 ```
@@ -271,7 +270,9 @@ Each step outputs:
 2. **Result** (success/fail + details)
 3. **Next action** (or stop on failure)
 
-Failures roll back automatically via manifest.
+On a bad target config, pre-flight validation aborts BEFORE any file is written.
+Uninstall then rolls back precisely via the manifest (it is not an automatic
+transaction — inspect the manifest if an install fails midway).
 
 ## References
 
