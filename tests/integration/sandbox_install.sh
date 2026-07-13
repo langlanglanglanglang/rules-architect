@@ -71,8 +71,8 @@ echo ">>> Step 2b: install_hooks.py (real, non-interactive)"
 python3 "$SKILL_DIR/scripts/install_hooks.py" --non-interactive --skip-version-check
 echo
 
-# === Step 3: Verify all 5 hooks installed ===
-echo ">>> Step 3: verify 5 hooks installed"
+# === Step 3: Verify all 3 core hooks installed ===
+echo ">>> Step 3: verify 3 core hooks installed"
 # v2.0.0: only 3 core hooks (SOP injection + base infrastructure).
 # error_recovery_checkpoint and dangerous_branch_reminder were moved to examples/
 # (they encode individual workflow preferences, not universal patterns).

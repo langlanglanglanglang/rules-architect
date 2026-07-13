@@ -68,17 +68,25 @@ PRESETS = {
     ),
 }
 
-keyword_choice = os.environ.get("RULE_INTAKE_KEYWORDS", "chinese").strip()
+keyword_choice = os.environ.get("RULE_INTAKE_KEYWORDS", "{{RULE_INTAKE_KEYWORDS}}").strip()
 if keyword_choice in PRESETS:
     pattern_src = PRESETS[keyword_choice]
 else:
-    # Treat as raw regex (advanced)
+    # Treat as raw regex (advanced). NOTE: a pathological custom pattern can
+    # still cause slow backtracking (ReDoS) — custom values are at your own risk.
     pattern_src = keyword_choice
 
-PATTERN = re.compile(pattern_src, re.IGNORECASE)
+try:
+    PATTERN = re.compile(pattern_src, re.IGNORECASE)
+except re.error:
+    # Invalid custom regex → fall back to the safe default preset rather than
+    # crashing the hook (and thus the session) on every invocation.
+    PATTERN = re.compile(PRESETS["chinese"], re.IGNORECASE)
 
 
 def log_audit(hook: str, decision: str, **kwargs) -> None:
+    if os.environ.get("RA_AUDIT_DISABLE"):
+        return
     rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
     try:
         with open(CACHE / "audit.jsonl", "a") as f:
@@ -116,7 +124,11 @@ def main() -> int:
     if not isinstance(data, dict):
         return 0
 
-    session_id = data.get("session_id", "unknown")
+    # Sanitize the runtime-supplied session id before it lands in a lock
+    # filename (prevents path traversal / lock collision via crafted ids).
+    session_id = re.sub(
+        r"[^A-Za-z0-9_-]", "_", str(data.get("session_id", "unknown"))
+    )[:128]
     prompt = (
         data.get("prompt")
         or data.get("user_prompt")

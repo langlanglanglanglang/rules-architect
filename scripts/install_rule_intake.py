@@ -45,7 +45,8 @@ DEFAULT_PATHS = [
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "rules" / "rule-intake.md.tmpl"
-MANIFEST_PATH = Path.home() / ".claude" / ".rules-architect-manifest.json"
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
+                     or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 
 def info(msg): print(f"  ℹ {msg}")
@@ -80,8 +81,17 @@ def atomic_write(path: Path, content: str) -> None:
 
 def load_manifest() -> dict:
     if MANIFEST_PATH.exists():
-        try: return json.loads(MANIFEST_PATH.read_text())
-        except Exception: pass
+        try:
+            return json.loads(MANIFEST_PATH.read_text())
+        except Exception:
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+            try:
+                MANIFEST_PATH.rename(bad)
+                warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+                     "Old install entries are NOT auto-tracked — recover from that file.")
+            except Exception:
+                warn("Manifest unreadable and could not be quarantined; starting fresh")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -139,7 +149,25 @@ def main() -> int:
     if dest_path.exists():
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
-            ok("Already installed with identical content — nothing to do")
+            ok("Already installed with identical content")
+            # Adopt into the manifest if untracked (e.g. manifest lost/reset),
+            # so uninstall can still remove this file later.
+            if not args.dry_run:
+                manifest = load_manifest()
+                if not any(f.get("path") == str(dest_path)
+                           for f in manifest.get("installed_files", [])):
+                    manifest.setdefault("installed_files", []).append({
+                        "path": str(dest_path),
+                        "hash_sha256": rendered_hash,
+                        "owner": "rules-architect",
+                        "template_version": SKILL_VERSION,
+                        "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "kind": "rule-intake",
+                        "project_root": str(project_root),
+                    })
+                    manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    save_manifest(manifest)
+                    ok("Adopted into manifest (was untracked)")
             return 0
         if not args.force:
             warn(f"{dest_path} exists with different content. "

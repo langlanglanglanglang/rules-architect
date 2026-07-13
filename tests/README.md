@@ -33,9 +33,9 @@ Exit code != 0 = some assertion failed; details printed.
 |---|---|
 | 1 | `diagnose.py` runs on empty state without error |
 | 2 | `install_hooks.py --dry-run` produces plan, modifies nothing |
-| 3 | `install_hooks.py` (real) creates 5 hooks + settings.json entries |
-| 4 | All 5 expected hook files are executable |
-| 5 | `settings.json` contains PostToolUse / PreToolUse / UserPromptSubmit / SessionStart |
+| 3 | `install_hooks.py` (real) creates 3 core hooks + settings.json entries |
+| 4 | All 3 expected hook files are executable |
+| 5 | `settings.json` contains PreToolUse / UserPromptSubmit / SessionStart |
 | 6 | `install_rule_intake.py` creates `.claude/rules/rule-intake.md` |
 | 7 | `install_personal_md_section.py` inserts §六 with markers |
 | 8 | `diagnose.py` post-install reports L0 grade A or B |

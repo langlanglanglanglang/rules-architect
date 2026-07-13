@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,7 +41,8 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "hooks" / "generated-hook-skeleton.py.tmpl"
 HOOKS_DEST = Path.home() / ".claude" / "hooks"
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-MANIFEST_PATH = Path.home() / ".claude" / ".rules-architect-manifest.json"
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
+                     or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 
 def info(msg): print(f"  ℹ {msg}")
@@ -67,10 +69,23 @@ def atomic_write(path, content):
         raise
 
 
+def _quarantine_corrupt_manifest():
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+    try:
+        MANIFEST_PATH.rename(bad)
+        warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+             "Old install entries are NOT auto-tracked — recover them from that file.")
+    except Exception:
+        warn("Manifest unreadable and could not be quarantined; starting fresh")
+
+
 def load_manifest():
     if MANIFEST_PATH.exists():
-        try: return json.loads(MANIFEST_PATH.read_text())
-        except: pass
+        try:
+            return json.loads(MANIFEST_PATH.read_text())
+        except Exception:
+            _quarantine_corrupt_manifest()
     return {"skill_name": "rules-architect", "skill_version": SKILL_VERSION,
             "installed_files": [], "settings_hooks_added": [], "last_install_at": None}
 
@@ -117,17 +132,22 @@ def main():
     print(f"   Dest:    {HOOKS_DEST / (name + '.py')}")
     print()
 
-    # Render template
+    # Render template.
+    # REMINDER is injected as a Python string literal via json.dumps so any
+    # reminder text (backslashes, triple-quotes, newlines) is safe. Fields that
+    # land inside the module docstring are escaped so a stray backslash (e.g. a
+    # Windows path) or `"""` can't produce invalid Python.
+    def _docstring_safe(s: str) -> str:
+        return s.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+
     rendered = TEMPLATE_PATH.read_text()
-    # Escape triple-quote in reminder
-    safe_reminder = reminder.replace('"""', '\\"\\"\\"')
     rendered = (rendered
         .replace("{{NAME}}", name)
         .replace("{{EVENT}}", args.event)
-        .replace("{{MATCHER}}", args.matcher)
-        .replace("{{REMINDER}}", safe_reminder)
-        .replace("{{DESCRIPTION}}", args.description or f"Generated hook {name}")
-        .replace("{{FEEDBACK_SOURCE}}", args.feedback_source or "(manual)")
+        .replace("{{MATCHER}}", _docstring_safe(args.matcher))
+        .replace("{{REMINDER_JSON}}", json.dumps(reminder, ensure_ascii=False))
+        .replace("{{DESCRIPTION}}", _docstring_safe(args.description or f"Generated hook {name}"))
+        .replace("{{FEEDBACK_SOURCE}}", _docstring_safe(args.feedback_source or "(manual)"))
         .replace("{{SKILL_VERSION}}", SKILL_VERSION))
 
     dest_path = HOOKS_DEST / f"{name}.py"
@@ -138,6 +158,20 @@ def main():
              "(delete it first or pick a different --name)")
         return 3
 
+    # Pre-flight: don't write the hook file if settings.json is present but
+    # unparseable — the later merge would fail, leaving an untracked file.
+    if SETTINGS_PATH.exists():
+        try:
+            _cfg = json.loads(SETTINGS_PATH.read_text())
+        except Exception as e:
+            err(f"settings.json is present but not valid JSON ({e}). "
+                "Fix it first so install stays atomic.")
+            return 4
+        if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
+            err("settings.json has an unexpected shape (root object with an "
+                "object 'hooks' required). Fix it first.")
+            return 4
+
     if args.dry_run:
         info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
         return 0
@@ -146,8 +180,14 @@ def main():
     os.chmod(dest_path, 0o755)
     ok(f"Installed {dest_path}")
 
-    # Merge settings.json
+    # Merge settings.json (back it up first — parity with the other installers,
+    # which never mutate settings.json without a timestamped snapshot)
+    settings_backup = None
     if SETTINGS_PATH.exists():
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        settings_backup = SETTINGS_PATH.with_suffix(f".json.bak.{ts}")
+        shutil.copy2(SETTINGS_PATH, settings_backup)
+        ok(f"Backed up settings.json → {settings_backup.name}")
         settings = json.loads(SETTINGS_PATH.read_text())
     else:
         settings = {}
@@ -178,6 +218,8 @@ def main():
         "owner": "rules-architect",
         "kind": "generated-from-memory",
     })
+    if settings_backup is not None:
+        m["settings_backup_path"] = str(settings_backup)
     save_manifest(m)
     ok(f"Manifest updated")
 

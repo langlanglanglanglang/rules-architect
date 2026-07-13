@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -127,9 +128,21 @@ def main():
             info(f"   | {line}")
         return 0
 
+    # Back up the original memory file before rewriting. git history only helps
+    # if the memory dir is a git repo — this snapshot always works.
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    backup = path.with_suffix(path.suffix + f".bak.{ts}")
+    try:
+        shutil.copy2(path, backup)
+        ok(f"Backed up original → {backup.name}")
+    except Exception as e:
+        warn(f"Could not back up {path.name} ({e}); aborting to avoid data loss")
+        return 1
+
     atomic_write(path, new_text)
     ok(f"Body replaced with Promoted-to stub")
-    info(f"   Original body remains in git history: cd {path.parent} && git log {path.name}")
+    info(f"   Original preserved at: {backup}")
+    info(f"   (also in git history if the memory dir is a repo)")
     return 0
 
 

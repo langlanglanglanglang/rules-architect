@@ -143,7 +143,7 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 
 - ❌ **不是 CLAUDE.md 审计器** — 用 `claude-md-management:claude-md-improver`（Anthropic 官方插件）做 L3 审计
 - ❌ **不是项目特定** — 业务 hook（`mr_created_reminder` 等）放 `examples/`
-- ❌ **不支持 codex / gemini** — CC 专属。codex / gemini 替代方案见跨工具节
+- ⚠️ **codex 一等公民,gemini 需 shim** — codex 用 `install_codex_hooks.py` 原生装 3 hook;gemini 等无 hook 契约的工具见跨工具节
 
 ## 配置
 
@@ -154,7 +154,6 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 | `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / 自定义正则 |
 | `PROTECTED_BRANCHES` | `develop\|test\|master` | 管道分隔的分支名 |
 | `LESSONS_PATH` | （无） | 团队 lessons.md 绝对路径 |
-| `MIN_CC_VERSION` | `1.5.0` | 低于此版本拒绝安装 |
 | `RA_TOKEN_EXTRA_PATHS` | （无） | diagnose token 估算时额外扫描的相对路径，逗号分隔 |
 
 ## 跨平台说明
@@ -163,9 +162,26 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 - Windows：hook 通过 Python 工作；缓存路径用 `%LOCALAPPDATA%\Claude\cache`
 - WSL：按 Linux 处理
 
-## 跨工具（codex / gemini 等）
+## codex 支持（一等公民）
 
-CC hook 不在 codex / gemini 上触发。对那些工作流：
+codex CLI（>= 0.124.0）有一套与 CC **I/O 完全同构**的 hook 系统。装法：
+
+```bash
+python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
+```
+
+把同样 3 个自包含 hook 写进 `~/.codex/hooks/`,deep-merge 进 `~/.codex/hooks.json`(保留已有条目)。差异全部由安装器处理:
+- 文件编辑 matcher 是 `apply_patch`(不是 `Write|Edit`);`memory_intake_check.py` 双运行时,自动解析 patch 文本里的路径
+- `UserPromptSubmit` 不吃 matcher;`SessionStart` matcher 是 `startup|resume`
+- **信任步骤**:codex 要按 hash 授信,装完在 codex TUI 跑 `/hooks` 打开这 3 个 hook(或首次触发时确认)
+
+卸载走同一个 `uninstall.py`(codex 产物记在 manifest 的 `codex_*` 键,精准回滚)。
+
+L1 memory 不跨工具(codex 有自己的私有 store)——按设计 L1 本就不承载团队规则。
+
+## 跨工具（gemini 等无 hook 契约的工具）
+
+对不发布 hook 契约的工具：
 - L3 规则：放进 `AGENTS.md`（codex 读它；CC 通过 `@AGENTS.md` 读）
 - L0 等价物：pre-commit / githook 做分支保护
 - L5（团队 lessons）：纯 markdown，任何工具能读
@@ -183,9 +199,11 @@ python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
 2. 只删本 skill 添加的 hook 入口（保留你自己的其他 hook）
 3. 仅在用户显式选择时才恢复 settings.json 备份
 
+**会删**（作为 manifest 跟踪的已装文件，hash 校验）：
+- 项目级 `.claude/rules/rule-intake.md`（若你改过 → hash 不一致 → 跳过保留）
+
 **不会删**：
 - 你对装好文件的本地修改（hash 不一致 → 跳过并 warn）
-- 项目级 `.claude/rules/rule-intake.md`（需手动删，避免误清理）
 - 任何 L1 memory 文件（属于你的）
 
 ## Q&A

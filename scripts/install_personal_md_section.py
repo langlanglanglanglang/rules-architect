@@ -38,7 +38,8 @@ MARKER_END = "<!-- rules-architect:section-6 END -->"
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "personal-section-6.md.tmpl"
-MANIFEST_PATH = Path.home() / ".claude" / ".rules-architect-manifest.json"
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
+                     or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 
 def info(msg): print(f"  ℹ {msg}")
@@ -67,10 +68,23 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def load_manifest() -> dict:
+def load_manifest(dry_run: bool = False) -> dict:
     if MANIFEST_PATH.exists():
-        try: return json.loads(MANIFEST_PATH.read_text())
-        except Exception: pass
+        try:
+            return json.loads(MANIFEST_PATH.read_text())
+        except Exception:
+            if dry_run:
+                warn("Manifest unreadable (DRY-RUN: would quarantine to "
+                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+            else:
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+                try:
+                    MANIFEST_PATH.rename(bad)
+                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+                         "Old install entries are NOT auto-tracked — recover from that file.")
+                except Exception:
+                    warn("Manifest unreadable and could not be quarantined; starting fresh")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -85,6 +99,28 @@ def save_manifest(m: dict) -> None:
     atomic_write(MANIFEST_PATH, json.dumps(m, indent=2, ensure_ascii=False))
 
 
+def record_section(target: Path, section_hash: str, action: str) -> None:
+    """Upsert this target's §六 entry into the manifest (used both for a fresh
+    install and to adopt an already-present pristine block after manifest loss)."""
+    manifest = load_manifest()
+    manifest.setdefault("personal_md_sections", [])
+    manifest["personal_md_sections"] = [
+        s for s in manifest["personal_md_sections"] if s.get("file") != str(target)
+    ]
+    manifest["personal_md_sections"].append({
+        "file": str(target),
+        "marker_begin": MARKER_BEGIN,
+        "marker_end": MARKER_END,
+        "section_hash": section_hash,
+        "owner": "rules-architect",
+        "template_version": SKILL_VERSION,
+        "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "action": action,
+    })
+    manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    save_manifest(manifest)
+
+
 def render_section(cache_dir: str, protected_branches: str) -> str:
     raw = TEMPLATE_PATH.read_text()
     section_body = (
@@ -94,6 +130,23 @@ def render_section(cache_dir: str, protected_branches: str) -> str:
         .replace("{{PROTECTED_BRANCHES}}", protected_branches)
     )
     return f"{MARKER_BEGIN}\n{section_body.strip()}\n{MARKER_END}\n"
+
+
+def extract_block(text: str):
+    """Return the exact stored §六 block (MARKER_BEGIN..MARKER_END + optional
+    trailing newline) — matches the form section_hash was computed over."""
+    m = re.search(
+        re.escape(MARKER_BEGIN) + r".*?" + re.escape(MARKER_END) + r"\n?",
+        text, re.DOTALL,
+    )
+    return m.group(0) if m else None
+
+
+def recorded_section_hash(target: Path, dry_run: bool = False):
+    for s in load_manifest(dry_run).get("personal_md_sections", []):
+        if s.get("file") == str(target):
+            return s.get("section_hash")
+    return None
 
 
 def replace_or_append(text: str, new_section: str) -> tuple:
@@ -128,6 +181,8 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--create-if-missing", action="store_true",
                     help="Create a fresh CLAUDE-personal.md if target doesn't exist")
+    ap.add_argument("--force", action="store_true",
+                    help="Overwrite the §六 block even if it was edited since install")
     ap.add_argument("--protected-branches", default="develop|test|master",
                     help="For §六 'Hook health' subsection reference")
     ap.add_argument("--cache-dir",
@@ -167,6 +222,31 @@ def main() -> int:
         action = "created"
     else:
         existing = target.read_text()
+        # Content-protection guard: if a §六 block exists and was edited since
+        # install (its hash differs from the recorded section_hash), refuse to
+        # overwrite unless --force. Mirrors the file hash-protection promise.
+        if MARKER_BEGIN in existing and not args.force:
+            rec = recorded_section_hash(target, args.dry_run)
+            cur = extract_block(existing)
+            if cur is not None and rec is None:
+                if text_sha256(cur) == rendered_hash:
+                    # Markers present, manifest lost, but the block is pristine
+                    # (identical to a fresh render) → safe to adopt into manifest
+                    # instead of refusing, so uninstall can remove it later.
+                    if not args.dry_run:
+                        record_section(target, rendered_hash, "adopted")
+                    ok(f"§六 present in {target.name} & matches template — adopted "
+                       "into manifest")
+                    return 0
+                # Markers exist, no record, and block differs from template:
+                # can't prove it's safe, so don't overwrite blindly.
+                warn(f"§六 markers present in {target.name} but no manifest record "
+                     "and block differs from template — refusing. Use --force.")
+                return 1
+            if cur is not None and rec is not None and text_sha256(cur) != rec:
+                warn(f"§六 block in {target.name} was modified since install "
+                     "(hash mismatch) — refusing to overwrite. Use --force to replace.")
+                return 1
         new_text, action = replace_or_append(existing, rendered)
         if new_text == existing:
             ok("Already up to date — nothing to do")

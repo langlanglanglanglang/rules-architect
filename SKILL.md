@@ -1,6 +1,6 @@
 ---
 name: rules-architect
-description: Self-improving Claude Code rule architecture - 5-layer memory model (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) + 5-question placement SOP + 4 generic hooks + path-scoped rule-intake + team sync. Use when user asks "how to manage rules" / "rules keep getting forgotten" / "claude.md optimization" / "memory optimization" / "rules architect" / wants rule placement automation. L3 audit delegated to claude-md-management:claude-md-improver.
+description: Self-improving Claude Code rule architecture - 5-layer memory model (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) + 5-question placement SOP + 3 core hooks + path-scoped rule-intake + team sync. Use when user asks "how to manage rules" / "rules keep getting forgotten" / "claude.md optimization" / "memory optimization" / "rules architect" / wants rule placement automation. L3 audit delegated to claude-md-management:claude-md-improver.
 triggers:
   - rules architect
   - 自我改进规则
@@ -16,7 +16,7 @@ triggers:
 
 > **中文** | [English](SKILL.en.md)
 
-Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule + 维护文档，让规则归位变可靠，不再靠 CLAUDE.md 的 attention。
+Claude Code 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule + 维护文档，让规则归位变可靠，不再靠 CLAUDE.md 的 attention。
 
 ## 它解决的问题
 
@@ -185,7 +185,7 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 - ❌ 项目特有 hook（如给 codeup MCP 用的 `mr_created_reminder`）— 看 `examples/`
 - ❌ 业务 path-scoped 规则（proto / sql / release-notes / meta-md）— 看 `examples/`
 - ❌ L3 CLAUDE.md 审计 — 委托给 `claude-md-management:claude-md-improver`
-- ❌ 跨工具支持 — 仅 CC。codex / gemini 用户：见 README 「跨工具」节
+- ⚠️ codex 一等公民（`install_codex_hooks.py` 原生装 hook）；gemini 等无 hook 契约的工具见 README 「跨工具」节
 
 ## 内容保留承诺
 
@@ -202,8 +202,8 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 
 **新增（经同意）**：
 
-- `~/.claude/hooks/` 内至多 5 个 hook 脚本
-- `~/.claude/settings.json` 内至多 5 个 hook 注册项（推送前先备份）
+- `~/.claude/hooks/` 内 3 个核心 hook 脚本（外加你主动从 memory 升级的）
+- `~/.claude/settings.json` 内对应的 hook 注册项（推送前先备份）
 - 模式 C/A：`.claude/rules/rule-intake.md`
 - 模式 A：`CLAUDE-personal.md` 的 §六 节（marker 保护）
 
@@ -225,7 +225,8 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 ├── README.en.md                          # 英文版
 ├── scripts/
 │   ├── diagnose.py                       # 扫 L0-L5，--json 输出
-│   ├── install_hooks.py                  # deep-merge 到 settings.json
+│   ├── install_hooks.py                  # deep-merge 到 settings.json（CC）
+│   ├── install_codex_hooks.py            # deep-merge 到 ~/.codex/hooks.json（codex）
 │   ├── install_rule_intake.py            # 项目级 path-scoped 安装
 │   ├── install_personal_md_section.py    # 加 §六 到 CLAUDE-personal.md
 │   ├── install_hook_from_memory.py       # 从 memory 生成 hook
@@ -286,7 +287,7 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 2. **结果**（成功/失败 + 详情）
 3. **下一步动作**（失败时停下）
 
-失败会通过 manifest 自动回滚。
+目标配置损坏时,pre-flight 校验会在写任何文件**之前**中止;其余失败场景按 manifest 用 uninstall 精准回滚(并非自动事务,中途失败请查 manifest)。
 
 ## 引用
 

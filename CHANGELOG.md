@@ -4,6 +4,32 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.3.0] — 2026-07-13
+
+### Added
+
+- **Codex CLI support (first-class)** — `scripts/install_codex_hooks.py`
+  installs the 3 core hooks into `~/.codex/hooks/` and deep-merges into
+  `~/.codex/hooks.json` (preserving existing entries), tracked in the manifest
+  under `codex_*` keys. Codex's hook I/O contract is identical to CC's
+  (snake_case stdin fields + `hookSpecificOutput.additionalContext`); verified
+  against Codex CLI v0.144.x.
+- **`uninstall.py` rolls back Codex artifacts** — removes `codex_installed_files`
+  and `codex_hooks_added` (handles the matcher-less `UserPromptSubmit` entry).
+- **`RULES_ARCHITECT_MANIFEST` env var** — all install/uninstall scripts now
+  honor it, so the full flow can be tested in true isolation (previously the
+  manifest path was hardcoded to `~/.claude/`).
+
+### Changed
+
+- **`memory_intake_check.py` is dual-runtime** — parses `apply_patch` patch
+  text for target paths (Codex has no structured `file_path` field), while
+  still reading `tool_input.file_path` (CC). Self-contained, no new imports.
+- **`examples/cross-tool-shim.md`** rewritten — Codex is now a native target,
+  not a "no hook contract" workaround. gemini remains the shim example.
+- **README / SKILL** — "not for codex" claims replaced with the Codex install
+  path; L1-memory-doesn't-port noted as by-design.
+
 ## [2.2.0] — 2026-06-12
 
 ### Added

@@ -27,3 +27,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# OMC runtime state (machine-specific session metadata — never commit)
+.omc/

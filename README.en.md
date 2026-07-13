@@ -145,18 +145,17 @@ Uninstall is precise (per-manifest, hash-verified). Files you modified locally a
 
 - ❌ **Not a CLAUDE.md auditor** — use `claude-md-management:claude-md-improver` (official Anthropic plugin) for L3 audit
 - ❌ **Not project-specific** — `mr_created_reminder`, `wiki_publish_check`, business rules go in your project's `.claude/rules/` or `~/.claude/hooks/` directly, see `examples/`
-- ❌ **Not for codex/gemini** — CC-only. See Cross-tool section below
+- ⚠️ **codex is first-class; gemini needs a shim** — install on codex with `install_codex_hooks.py`; tools with no hook contract (gemini, etc.) see the Cross-tool section below
 
 ## Configuration
 
-After install, customize via env vars or `~/.claude/.rules-architect-config.json`:
+After install, customize via env vars:
 
 | Variable | Default | What |
 |---|---|---|
 | `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / custom regex |
 | `PROTECTED_BRANCHES` | `develop\|test\|master` | Pipe-separated branch names |
 | `LESSONS_PATH` | (none) | Absolute path to team lessons.md |
-| `MIN_CC_VERSION` | `1.5.0` | Refuse install below this |
 | `RA_TOKEN_EXTRA_PATHS` | (none) | Comma-separated relative paths for diagnose token estimation to scan in addition |
 
 ## Cross-platform notes
@@ -165,9 +164,33 @@ After install, customize via env vars or `~/.claude/.rules-architect-config.json
 - Windows: hooks work via Python; `~/.cache` path uses `%LOCALAPPDATA%\\Claude\\cache`
 - WSL: treat as Linux
 
-## Cross-tool (codex / gemini / etc)
+## Codex support (first-class)
 
-CC hooks don't fire in codex / gemini. For those workflows:
+Codex CLI (>= 0.124.0) ships a hook system whose I/O contract is **identical**
+to CC's. Install with:
+
+```bash
+python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
+```
+
+It writes the same 3 self-contained hooks into `~/.codex/hooks/` and deep-merges
+into `~/.codex/hooks.json` (preserving existing entries). The installer handles
+every difference:
+- file-edit matcher is `apply_patch` (not `Write|Edit`); `memory_intake_check.py`
+  is dual-runtime and parses paths out of the patch text
+- `UserPromptSubmit` takes no matcher; `SessionStart` matcher is `startup|resume`
+- **trust step**: Codex trusts hooks by hash — after install, run `/hooks` in the
+  Codex TUI to toggle the 3 on (or confirm on first use)
+
+Uninstall uses the same `uninstall.py` (codex artifacts tracked under `codex_*`
+manifest keys for precise rollback).
+
+L1 memory does not port across tools (Codex has its own private store) — by
+design, L1 was never meant to carry team rules.
+
+## Cross-tool (gemini / tools with no hook contract)
+
+For tools that don't publish a hook contract:
 - L3 rules: put in `AGENTS.md` (codex reads it; CC reads via `@AGENTS.md`)
 - L0 equivalent: pre-commit / githook for branch protection
 - L5 (team lessons): pure markdown, works for any tool
@@ -185,9 +208,11 @@ Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
 2. Removes only the hook entries this skill added from `settings.json`
 3. Restores `~/.claude/settings.json.bak.<ts>` only if user explicitly opts in
 
+**Deletes** (as a manifest-tracked installed file, hash-verified):
+- Project-level `.claude/rules/rule-intake.md` (if you edited it → hash mismatch → skipped/preserved)
+
 **Does NOT delete**:
 - Your own customizations to installed files (hash mismatch → skip with warning)
-- Project-level `.claude/rules/rule-intake.md` (manual delete required to avoid accidental cleanup)
 - Any L1 memory files (they're yours)
 
 ## Q&A
