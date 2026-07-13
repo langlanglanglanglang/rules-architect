@@ -72,6 +72,10 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
+def save_manifest(m: dict) -> None:
+    atomic_write(MANIFEST_PATH, json.dumps(m, indent=2, ensure_ascii=False))
+
+
 def confirm(msg: str, default_yes: bool = False) -> bool:
     suffix = "[Y/n]" if default_yes else "[y/N]"
     try:
@@ -190,7 +194,10 @@ def remove_codex_hooks(manifest, dry_run):
             kept_hooks = []
             for h in c.get("hooks", []):
                 cmd = h.get("command", "")
-                if (event, matcher, cmd) in targets:
+                # Match exact (event,matcher,cmd), and also (event,None,cmd):
+                # matcher-less events (UserPromptSubmit) are recorded with
+                # matcher=None but our command may live in a matcher:"*" group.
+                if (event, matcher, cmd) in targets or (event, None, cmd) in targets:
                     removed += 1
                     continue
                 kept_hooks.append(h)
@@ -245,13 +252,12 @@ def remove_personal_sections(manifest, dry_run, force, non_interactive):
             if non_interactive:
                 warn(f"{f}: §六 block modified since install — preserving "
                      "(use --force to delete anyway)")
-                sections.remove(s)
+                # keep tracked so a later --force can still find/remove it
                 continue
             if not confirm(f"{f}: §六 block was edited since install. Delete anyway?",
                            default_yes=False):
                 info(f"{f}: §六 preserved by user choice")
-                sections.remove(s)
-                continue
+                continue  # keep tracked
         new_text = pattern.sub("", text, count=1)
         if dry_run:
             info(f"DRY-RUN: would remove §六 markers from {f}")
@@ -362,11 +368,21 @@ def main() -> int:
         info("DRY-RUN complete. Nothing was actually changed.")
         return 0
 
-    # Move manifest aside so future re-install starts fresh
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    removed_path = MANIFEST_PATH.with_suffix(f".json.removed.{ts}")
-    MANIFEST_PATH.rename(removed_path)
-    ok(f"Manifest archived → {removed_path}")
+    # If any tracked entries were preserved/skipped (e.g. locally-modified files
+    # or §六 blocks), keep a reduced manifest so a later deliberate --force run
+    # can still find them. Only archive when everything tracked is resolved.
+    remaining = sum(len(work.get(k, [])) for k in (
+        "installed_files", "codex_installed_files",
+        "settings_hooks_added", "codex_hooks_added", "personal_md_sections"))
+    if remaining:
+        save_manifest(work)
+        warn(f"{remaining} tracked item(s) preserved (modified/skipped) — manifest "
+             f"kept at {MANIFEST_PATH}, NOT archived. Re-run with --force to remove them.")
+    else:
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        removed_path = MANIFEST_PATH.with_suffix(f".json.removed.{ts}")
+        MANIFEST_PATH.rename(removed_path)
+        ok(f"Manifest archived → {removed_path}")
 
     print_uninstall_preservation_summary()
     print("✨ Uninstall complete.")

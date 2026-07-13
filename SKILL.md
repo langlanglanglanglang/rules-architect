@@ -1,6 +1,6 @@
 ---
 name: rules-architect
-description: Self-improving Claude Code rule architecture - 5-layer memory model (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) + 5-question placement SOP + 4 generic hooks + path-scoped rule-intake + team sync. Use when user asks "how to manage rules" / "rules keep getting forgotten" / "claude.md optimization" / "memory optimization" / "rules architect" / wants rule placement automation. L3 audit delegated to claude-md-management:claude-md-improver.
+description: Self-improving Claude Code rule architecture - 5-layer memory model (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) + 5-question placement SOP + 3 core hooks + path-scoped rule-intake + team sync. Use when user asks "how to manage rules" / "rules keep getting forgotten" / "claude.md optimization" / "memory optimization" / "rules architect" / wants rule placement automation. L3 audit delegated to claude-md-management:claude-md-improver.
 triggers:
   - rules architect
   - 自我改进规则

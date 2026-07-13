@@ -70,7 +70,11 @@ def main() -> int:
     if not isinstance(data, dict):
         return 0
 
-    session_id = data.get("session_id", "unknown")
+    # Sanitize the runtime-supplied id before it lands in a lock filename.
+    session_id = "".join(
+        c if (c.isalnum() or c in "_-") else "_"
+        for c in str(data.get("session_id", "unknown"))
+    )[:128]
     tool_response = data.get("tool_response")
     if not isinstance(tool_response, (dict, list, str)):
         return 0

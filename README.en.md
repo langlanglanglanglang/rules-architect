@@ -149,14 +149,13 @@ Uninstall is precise (per-manifest, hash-verified). Files you modified locally a
 
 ## Configuration
 
-After install, customize via env vars or `~/.claude/.rules-architect-config.json`:
+After install, customize via env vars:
 
 | Variable | Default | What |
 |---|---|---|
 | `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / custom regex |
 | `PROTECTED_BRANCHES` | `develop\|test\|master` | Pipe-separated branch names |
 | `LESSONS_PATH` | (none) | Absolute path to team lessons.md |
-| `MIN_CC_VERSION` | `1.5.0` | Refuse install below this |
 | `RA_TOKEN_EXTRA_PATHS` | (none) | Comma-separated relative paths for diagnose token estimation to scan in addition |
 
 ## Cross-platform notes

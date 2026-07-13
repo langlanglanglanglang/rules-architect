@@ -73,11 +73,12 @@ python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push --feedback 
 
 ### Hook health
 
-3 generic hooks installed at `~/.claude/hooks/` (managed by rules-architect skill v{{SKILL_VERSION}}). Hit records at `{{CACHE_DIR}}/audit.jsonl`:
-- `error_recovery_checkpoint.py` — tool error → force 3-line recovery report
+3 core hooks installed at `~/.claude/hooks/` (managed by rules-architect skill v{{SKILL_VERSION}}). Hit records at `{{CACHE_DIR}}/audit.jsonl`:
 - `memory_intake_check.py` — writing to memory → inject 5-Q SOP
 - `rule_intake_reminder.py` — user msg has rule keywords → inject 5-Q SOP
-- `dangerous_branch_reminder.py` — git checkout to {{PROTECTED_BRANCHES}} → soft reminder
+- `cleanup_hook.py` — SessionStart maintenance (lock TTL + audit rotation)
+
+Opt-in workflow hooks (fork from `examples/`): `error_recovery_checkpoint.py`, `dangerous_branch_reminder.py` (checkout to {{PROTECTED_BRANCHES}}), `mr_created_reminder.py`.
 
 Observation:
 ```bash

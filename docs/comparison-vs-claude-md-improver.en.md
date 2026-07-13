@@ -19,7 +19,7 @@ They are designed to coexist. `rules-architect` actively delegates L3 (CLAUDE.md
 |---|---|---|
 | **Scope** | CLAUDE.md files | 5-layer ecosystem (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) |
 | **Core question** | Content quality | Rule placement |
-| **Output** | Score report + diff approval → Edit | Install 5 hooks + path-scoped rule + maintenance docs + scripts |
+| **Output** | Score report + diff approval → Edit | Install 3 core hooks + path-scoped rule + maintenance docs + scripts |
 | **Mechanism** | One-shot audit (read report → fix) | Continuous interception (real-time hook fires, no attention dependency) |
 | **Modifies settings.json** | No | Yes (registers hooks, with manifest-based rollback) |
 | **L3 CLAUDE.md content audit** | ✅ Specialty (6-criteria A–F grading) | ❌ Explicitly delegates to claude-md-improver |

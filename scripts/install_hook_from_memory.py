@@ -158,6 +158,16 @@ def main():
              "(delete it first or pick a different --name)")
         return 3
 
+    # Pre-flight: don't write the hook file if settings.json is present but
+    # unparseable — the later merge would fail, leaving an untracked file.
+    if SETTINGS_PATH.exists():
+        try:
+            json.loads(SETTINGS_PATH.read_text())
+        except Exception as e:
+            err(f"settings.json is present but not valid JSON ({e}). "
+                "Fix it first so install stays atomic.")
+            return 4
+
     if args.dry_run:
         info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
         return 0

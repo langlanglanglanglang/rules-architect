@@ -244,6 +244,18 @@ def install_hook_file(
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
             info(f"{template_name}: already installed and identical, skip")
+            # Adopt into manifest if untracked (e.g. manifest was lost/reset),
+            # so uninstall can still remove it precisely later.
+            tracked = manifest.setdefault("codex_installed_files", [])
+            if not any(f.get("path") == str(dest_path) for f in tracked):
+                tracked.append({
+                    "path": str(dest_path),
+                    "hash_sha256": rendered_hash,
+                    "owner": "rules-architect",
+                    "template_version": SKILL_VERSION,
+                    "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                })
+                info(f"{template_name}: adopted into manifest (was untracked)")
             return "ok"
         if not force:
             if interactive:
@@ -338,7 +350,28 @@ def merge_hooks_json(
 
         hooks_section.setdefault(event, [])
 
-        # Find an existing group with the same matcher (None == no matcher key)
+        # Matcher-less events (UserPromptSubmit): Codex ignores the matcher, so
+        # ALL entries for the event form one pool. Match our command across all
+        # of them to stay idempotent, and never create a second matcher-less
+        # group beside an existing matcher:"*" one.
+        if matcher is None:
+            if any(h.get("command") == command
+                   for e in hooks_section[event] for h in e.get("hooks", [])):
+                info(f"hooks.json: {event} already has our command, skip")
+                continue
+            if hooks_section[event]:
+                hooks_section[event][0].setdefault("hooks", []).append(
+                    {"type": "command", "command": command})
+            else:
+                hooks_section[event].append(
+                    {"hooks": [{"type": "command", "command": command}]})
+            added_this_run.append({
+                "event": event, "matcher": matcher,
+                "command": command, "owner": "rules-architect",
+            })
+            continue
+
+        # Find an existing group with the same matcher
         existing_entry = None
         for entry in hooks_section[event]:
             if entry.get("matcher") == matcher:
@@ -541,6 +574,17 @@ def main() -> int:
 
     if not check_codex_version(args.skip_version_check):
         return 2
+
+    # Pre-flight: refuse to write ANY hook file if the target hooks.json is
+    # present but unparseable — otherwise we'd leave untracked files behind
+    # (merge would fail after files are already written), breaking rollback.
+    if HOOKS_JSON.exists():
+        try:
+            json.loads(HOOKS_JSON.read_text())
+        except Exception as e:
+            err(f"hooks.json is present but not valid JSON ({e}). "
+                "Fix it first so install stays atomic and rollback precise.")
+            return 2
 
     backup_path = backup_hooks_json(args.dry_run)
 

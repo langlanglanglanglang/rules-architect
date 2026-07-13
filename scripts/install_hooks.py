@@ -2,9 +2,10 @@
 """
 rules-architect skill: install_hooks.py
 
-Install 5 generic hooks (error_recovery / memory_intake / rule_intake /
-dangerous_branch / cleanup) into ~/.claude/hooks/ and deep-merge entries
-into ~/.claude/settings.json. Tracks every artifact in a manifest for
+Install 3 core hooks (memory_intake / rule_intake / cleanup) into
+~/.claude/hooks/ and deep-merge entries into ~/.claude/settings.json.
+Individual workflow-preference hooks (error_recovery, dangerous_branch, ...)
+live in examples/ for opt-in. Tracks every artifact in a manifest for
 precise uninstall.
 
 V2 BLOCKER fixes applied:
@@ -240,6 +241,18 @@ def install_hook_file(
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
             info(f"{template_name}: already installed and identical, skip")
+            # Adopt into manifest if untracked (e.g. manifest was lost/reset),
+            # so uninstall can still remove it precisely later.
+            tracked = manifest.setdefault("installed_files", [])
+            if not any(f.get("path") == str(dest_path) for f in tracked):
+                tracked.append({
+                    "path": str(dest_path),
+                    "hash_sha256": rendered_hash,
+                    "owner": "rules-architect",
+                    "template_version": SKILL_VERSION,
+                    "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                })
+                info(f"{template_name}: adopted into manifest (was untracked)")
             return "ok"
         if not force:
             if interactive:
@@ -598,6 +611,17 @@ def main() -> int:
     # 1. CC version check
     if not check_cc_version(args.skip_version_check):
         return 2
+
+    # 1.5 Pre-flight: refuse to write ANY hook file if the target settings.json
+    # is present but unparseable — otherwise we'd leave untracked files behind
+    # (merge would fail after files are already written), breaking rollback.
+    if SETTINGS_PATH.exists():
+        try:
+            json.loads(SETTINGS_PATH.read_text())
+        except Exception as e:
+            err(f"settings.json is present but not valid JSON ({e}). "
+                "Fix it first so install stays atomic and rollback precise.")
+            return 2
 
     # 2. Backup
     backup_path = backup_settings(args.dry_run)

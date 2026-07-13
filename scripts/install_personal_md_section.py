@@ -203,10 +203,16 @@ def main() -> int:
         # Content-protection guard: if a §六 block exists and was edited since
         # install (its hash differs from the recorded section_hash), refuse to
         # overwrite unless --force. Mirrors the file hash-protection promise.
-        if MARKER_BEGIN in existing:
+        if MARKER_BEGIN in existing and not args.force:
             rec = recorded_section_hash(target, args.dry_run)
             cur = extract_block(existing)
-            if rec and cur is not None and text_sha256(cur) != rec and not args.force:
+            if cur is not None and rec is None:
+                # Markers exist but no manifest record (missing/corrupt manifest):
+                # we cannot prove the block is unedited, so don't overwrite blindly.
+                warn(f"§六 markers present in {target.name} but no manifest record "
+                     "to verify against — refusing to overwrite. Use --force to replace.")
+                return 1
+            if cur is not None and rec is not None and text_sha256(cur) != rec:
                 warn(f"§六 block in {target.name} was modified since install "
                      "(hash mismatch) — refusing to overwrite. Use --force to replace.")
                 return 1

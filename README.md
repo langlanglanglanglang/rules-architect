@@ -154,7 +154,6 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 | `RULE_INTAKE_KEYWORDS` | `chinese` | `chinese` / `english` / 自定义正则 |
 | `PROTECTED_BRANCHES` | `develop\|test\|master` | 管道分隔的分支名 |
 | `LESSONS_PATH` | （无） | 团队 lessons.md 绝对路径 |
-| `MIN_CC_VERSION` | `1.5.0` | 低于此版本拒绝安装 |
 | `RA_TOKEN_EXTRA_PATHS` | （无） | diagnose token 估算时额外扫描的相对路径，逗号分隔 |
 
 ## 跨平台说明
