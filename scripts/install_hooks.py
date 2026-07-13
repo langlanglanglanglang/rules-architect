@@ -223,11 +223,13 @@ def install_hook_file(
     dry_run: bool,
     force: bool,
     interactive: bool,
-) -> bool:
+) -> str:
+    # Returns "ok" (our file is in place → register it), "skip" (a foreign
+    # same-named file was left untouched → must NOT register it), or "abort".
     template_path = TEMPLATES_DIR / (template_name + ".tmpl")
     if not template_path.exists():
         err(f"Template missing: {template_path}")
-        return False
+        return "abort"
     raw = template_path.read_text()
     rendered = substitute(raw, vars_)
     rendered_hash = text_sha256(rendered)
@@ -238,15 +240,15 @@ def install_hook_file(
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
             info(f"{template_name}: already installed and identical, skip")
-            return True
+            return "ok"
         if not force:
             if interactive:
                 print(f"\n  Hook {template_name} exists with different content.")
                 print(f"    [s]kip  [r]eplace  [b]ackup-then-replace  [a]bort")
                 choice = input("  Choice? ").strip().lower()
                 if choice == "s":
-                    info(f"{template_name}: skipped by user")
-                    return True
+                    info(f"{template_name}: skipped by user (will NOT be registered)")
+                    return "skip"
                 if choice == "b":
                     bak = dest_path.with_suffix(f".py.bak.{int(time.time())}")
                     if not dry_run:
@@ -254,19 +256,19 @@ def install_hook_file(
                     info(f"{template_name}: backup → {bak.name}")
                 elif choice == "a":
                     err("Aborted by user")
-                    return False
+                    return "abort"
                 elif choice != "r":
-                    info(f"{template_name}: unrecognized choice, skipping")
-                    return True
+                    info(f"{template_name}: unrecognized choice, skipping (will NOT be registered)")
+                    return "skip"
             else:
                 # non-interactive: skip on conflict (safe default)
                 warn(f"{template_name}: differs from template, skipping "
-                     "(use --force to overwrite)")
-                return True
+                     "(use --force to overwrite; will NOT be registered)")
+                return "skip"
 
     if dry_run:
         info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
-        return True
+        return "ok"
 
     atomic_write(dest_path, rendered)
     try:
@@ -287,7 +289,7 @@ def install_hook_file(
         "template_version": SKILL_VERSION,
         "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
-    return True
+    return "ok"
 
 
 # === Settings.json deep-merge ===
@@ -296,6 +298,7 @@ def merge_settings(
     dry_run: bool,
     force: bool,
     interactive: bool,
+    registerable: set,
 ) -> bool:
     if SETTINGS_PATH.exists():
         try:
@@ -312,6 +315,13 @@ def merge_settings(
     settings_added_this_run = []
 
     for template_name, hook_def in HOOK_TEMPLATES:
+        # Never register a template whose file we did NOT install (a foreign
+        # same-named file was skipped) — else settings.json would activate that
+        # script as ours while it stays untracked in the manifest.
+        if template_name not in registerable:
+            warn(f"settings.json: not registering {template_name} — its file "
+                 "was skipped (not our content)")
+            continue
         event = hook_def["event"]
         matcher = hook_def["matcher"]
         command = f"python3 ~/.claude/hooks/{template_name}"
@@ -607,14 +617,18 @@ def main() -> int:
     # 5. Install hooks
     print("\n--- Installing hook files ---")
     all_ok = True
+    registerable = set()
     for template_name, _ in HOOK_TEMPLATES:
-        if not install_hook_file(
+        status = install_hook_file(
             template_name, template_vars, manifest,
             args.dry_run, args.force,
             interactive=not args.non_interactive
-        ):
+        )
+        if status == "abort":
             all_ok = False
             break
+        if status == "ok":
+            registerable.add(template_name)
 
     if not all_ok:
         err("Hook installation failed. Backup at: " + str(backup_path or "n/a"))
@@ -623,7 +637,8 @@ def main() -> int:
     # 6. Merge settings.json
     print("\n--- Merging settings.json ---")
     if not merge_settings(manifest, args.dry_run, args.force,
-                          interactive=not args.non_interactive):
+                          interactive=not args.non_interactive,
+                          registerable=registerable):
         err("settings.json merge failed.")
         return 4
 
