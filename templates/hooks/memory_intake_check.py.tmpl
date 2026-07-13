@@ -47,6 +47,8 @@ CACHE.mkdir(parents=True, exist_ok=True)
 
 
 def log_audit(hook: str, decision: str, **kwargs) -> None:
+    if os.environ.get("RA_AUDIT_DISABLE"):
+        return
     rec = {"ts": time.time(), "hook": hook, "decision": decision, **kwargs}
     try:
         with open(CACHE / "audit.jsonl", "a") as f:
@@ -134,7 +136,11 @@ def main() -> int:
     if not isinstance(data, dict):
         return 0
 
-    session_id = data.get("session_id", "unknown")
+    # Sanitize the runtime-supplied session id before it lands in a lock
+    # filename (prevents path traversal / lock collision via crafted ids).
+    session_id = re.sub(
+        r"[^A-Za-z0-9_-]", "_", str(data.get("session_id", "unknown"))
+    )[:128]
     tool_input = data.get("tool_input") or {}
 
     hit = next((p for p in candidate_paths(tool_input) if is_memory_path(p)), None)

@@ -299,7 +299,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--non-interactive", action="store_true")
     ap.add_argument("--force", action="store_true",
-                    help="Delete files even on hash mismatch (dangerous)")
+                    help="Delete files even on hash mismatch (DANGEROUS: with a "
+                         "hand-pointed RULES_ARCHITECT_MANIFEST this bypasses the "
+                         "hash guard and can delete arbitrary listed paths)")
     ap.add_argument("--restore-backup", action="store_true",
                     help="Also restore settings.json from backup file "
                          "(NOT precise rollback — full overwrite)")

@@ -17,12 +17,19 @@ Audit:  ~/.cache/claude-hooks/audit.jsonl
 """
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
 
 
 HOOK_NAME = "{{NAME}}"
+
+
+def safe_session_id(data: dict) -> str:
+    """Sanitize the runtime-supplied session id before using it in a filename
+    (prevents path traversal / lock-collision via a crafted session_id)."""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", str(data.get("session_id", "unknown")))[:128]
 
 
 def get_cache_dir() -> Path:
@@ -44,6 +51,8 @@ REMINDER = """{{REMINDER}}"""
 
 
 def log_audit(decision: str, **kwargs) -> None:
+    if os.environ.get("RA_AUDIT_DISABLE"):
+        return
     rec = {"ts": time.time(), "hook": HOOK_NAME, "decision": decision, **kwargs}
     try:
         with open(CACHE / "audit.jsonl", "a") as f:
@@ -60,7 +69,7 @@ def main() -> int:
     if not isinstance(data, dict):
         return 0
 
-    session_id = data.get("session_id", "unknown")
+    session_id = safe_session_id(data)
 
     lock = CACHE / f"{HOOK_NAME}-{session_id}.lock"
     if lock.exists():
