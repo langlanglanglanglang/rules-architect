@@ -44,6 +44,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -71,7 +72,7 @@ TEMPLATES_DIR = SKILL_DIR / "templates" / "hooks"
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
 HOOKS_DEST = CODEX_HOME / "hooks"
 HOOKS_JSON = CODEX_HOME / "hooks.json"
-MANIFEST_PATH = Path(os.environ.get("RULES_ARCHITECT_MANIFEST")
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
                      or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 
@@ -291,10 +292,10 @@ def merge_hooks_json(
             config = json.loads(HOOKS_JSON.read_text())
         except Exception as e:
             err(f"hooks.json unreadable: {e}")
-            return False
+            return (False, 0, 0)
         if not isinstance(config, dict):
             err("hooks.json is not a JSON object")
-            return False
+            return (False, 0, 0)
     else:
         config = {}
 
@@ -302,11 +303,16 @@ def merge_hooks_json(
     hooks_section = config["hooks"]
 
     added_this_run = []
+    skipped_conflicts = []   # same-matcher groups we did NOT register into
 
     for template_name, hook_def in CODEX_HOOK_TEMPLATES:
         event = hook_def["event"]
         matcher = hook_def["matcher"]
-        command = f"python3 {HOOKS_DEST / template_name}"
+        # Quote the script path so a CODEX_HOME / home dir containing spaces
+        # (e.g. "/Users/Jane Doe/.codex") does not split the command.
+        # (python3 is left bare, resolved via PATH — matches the CC installer;
+        # Windows remains "partial support" per docs.)
+        command = f"python3 {shlex.quote(str(HOOKS_DEST / template_name))}"
 
         hooks_section.setdefault(event, [])
 
@@ -359,15 +365,27 @@ def merge_hooks_json(
                     })
                 else:
                     info(f"hooks.json: {event}/{matcher}: skipped")
+                    skipped_conflicts.append((event, matcher))
                     continue
             else:
                 warn(f"hooks.json: {event}/{matcher} conflicts, skipping. "
                      "Re-run with --force or interactively")
+                skipped_conflicts.append((event, matcher))
                 continue
 
+    def _note_skips():
+        for event, matcher in skipped_conflicts:
+            warn(f"NOT registered: {event}"
+                 + (f"/{matcher}" if matcher else "")
+                 + " already has a different command — re-run with --force to append")
+
     if not added_this_run:
-        info("hooks.json: no changes needed")
-        return True
+        if skipped_conflicts:
+            _note_skips()
+            info(f"hooks.json: 0 added, {len(skipped_conflicts)} skipped (conflicts)")
+        else:
+            info("hooks.json: no changes needed")
+        return (True, 0, len(skipped_conflicts))
 
     if dry_run:
         info(f"DRY-RUN: would write {HOOKS_JSON}")
@@ -376,10 +394,12 @@ def merge_hooks_json(
             info(f"   + {a['event']}"
                  + (f"/{a['matcher']}" if a['matcher'] else "")
                  + f" → {a['command']}")
-        return True
+        _note_skips()
+        return (True, len(added_this_run), len(skipped_conflicts))
 
     atomic_write(HOOKS_JSON, json.dumps(config, indent=2, ensure_ascii=False))
     ok(f"hooks.json: added {len(added_this_run)} entries")
+    _note_skips()
 
     existing = manifest.get("codex_hooks_added", [])
     seen = {(e["event"], e["matcher"], e["command"]) for e in existing}
@@ -389,7 +409,7 @@ def merge_hooks_json(
             existing.append(a)
             seen.add(key)
     manifest["codex_hooks_added"] = existing
-    return True
+    return (True, len(added_this_run), len(skipped_conflicts))
 
 
 # === Smoke test ===
@@ -436,7 +456,7 @@ def smoke_test_all() -> bool:
     return all_pass
 
 
-def print_summary(backup_path: Optional[str]) -> None:
+def print_summary(backup_path: Optional[str], added: int, skipped: int) -> None:
     print()
     print("✅ Content preservation summary (Codex):")
     print()
@@ -446,8 +466,11 @@ def print_summary(backup_path: Optional[str]) -> None:
     print("   ✋ Existing hook scripts       — skipped on hash mismatch")
     print()
     print("   ⭐ Changes (all tracked in manifest under codex_* keys):")
-    print(f"      + 3 hook scripts in {HOOKS_DEST}/")
-    print(f"      + hook entries in {HOOKS_JSON}")
+    print(f"      + up to 3 hook scripts in {HOOKS_DEST}/")
+    print(f"      + {added} hook entr{'y' if added == 1 else 'ies'} in {HOOKS_JSON}")
+    if skipped:
+        print(f"      ! {skipped} entr{'y' if skipped == 1 else 'ies'} SKIPPED (conflict) "
+              "— re-run with --force to append")
     print("        (memory_intake_check / rule_intake_reminder / cleanup_hook)")
     if backup_path:
         print(f"      → hooks.json backed up: {backup_path}")
@@ -520,8 +543,10 @@ def main() -> int:
             return 3
 
     print("\n--- Merging hooks.json ---")
-    if not merge_hooks_json(manifest, args.dry_run, args.force,
-                            interactive=not args.non_interactive):
+    merge_ok, n_added, n_skipped = merge_hooks_json(
+        manifest, args.dry_run, args.force,
+        interactive=not args.non_interactive)
+    if not merge_ok:
         err("hooks.json merge failed.")
         return 4
 
@@ -536,7 +561,7 @@ def main() -> int:
         print("\n--- Smoke-testing installed hooks ---")
         smoke_test_all()
 
-    print_summary(backup_path)
+    print_summary(backup_path, n_added, n_skipped)
     print_trust_notice()
     print("✨ Codex install complete.")
     print()

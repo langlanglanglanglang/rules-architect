@@ -38,7 +38,7 @@ MARKER_END = "<!-- rules-architect:section-6 END -->"
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "personal-section-6.md.tmpl"
-MANIFEST_PATH = Path(os.environ.get("RULES_ARCHITECT_MANIFEST")
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
                      or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 

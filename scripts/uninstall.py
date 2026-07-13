@@ -18,6 +18,7 @@ Usage:
   uninstall.py --restore-backup    # also restore settings.json.bak.<ts>
 """
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -30,7 +31,7 @@ from pathlib import Path
 
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-MANIFEST_PATH = Path(os.environ.get("RULES_ARCHITECT_MANIFEST")
+MANIFEST_PATH = Path((os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
                      or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
 CODEX_HOOKS_JSON = CODEX_HOME / "hooks.json"
@@ -288,6 +289,11 @@ def main() -> int:
         return 1
 
     manifest = json.loads(MANIFEST_PATH.read_text())
+    # Dry-run must not mutate any state that affects observable output; the
+    # remove_* helpers pop entries from the manifest dict, so operate on a
+    # throwaway copy when previewing. (Real runs mutate the live manifest,
+    # which is then archived below.)
+    work = copy.deepcopy(manifest) if args.dry_run else manifest
     print(f"\n📦 rules-architect uninstaller")
     print(f"   Manifest: {MANIFEST_PATH}")
     print(f"   Installed files: {len(manifest.get('installed_files', []))}")
@@ -303,25 +309,25 @@ def main() -> int:
             return 1
 
     print("\n--- Removing installed hook files ---")
-    remove_installed_files(manifest, args.dry_run, args.force, args.non_interactive)
+    remove_installed_files(work, args.dry_run, args.force, args.non_interactive)
 
     print("\n--- Removing hook entries from settings.json ---")
-    remove_settings_hooks(manifest, args.dry_run)
+    remove_settings_hooks(work, args.dry_run)
 
     print("\n--- Removing Codex hook files ---")
-    remove_installed_files(manifest, args.dry_run, args.force,
+    remove_installed_files(work, args.dry_run, args.force,
                            args.non_interactive, key="codex_installed_files")
 
     print("\n--- Removing hook entries from codex hooks.json ---")
-    remove_codex_hooks(manifest, args.dry_run)
+    remove_codex_hooks(work, args.dry_run)
 
     print("\n--- Removing §六 sections from personal markdown ---")
-    remove_personal_sections(manifest, args.dry_run,
-                              args.force, args.non_interactive)
+    remove_personal_sections(work, args.dry_run,
+                             args.force, args.non_interactive)
 
     if args.restore_backup:
         print("\n--- Restoring settings.json backup ---")
-        restore_backup_if_requested(manifest, args.dry_run)
+        restore_backup_if_requested(work, args.dry_run)
 
     if args.dry_run:
         info("DRY-RUN complete. Nothing was actually changed.")
