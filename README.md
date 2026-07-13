@@ -6,7 +6,7 @@
 
 **一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 模式选项详见[一键安装](#一键安装)节。
 
-> Claude Code 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。
+> Claude Code **及 Codex CLI** 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。（Codex 一等公民支持见 [codex 支持](#codex-支持一等公民) 节。）
 
 ## 安装包含什么
 
@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # 指定 tag 版本
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.1.1
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
 ```
 
 ### 或者手动装（更透明）

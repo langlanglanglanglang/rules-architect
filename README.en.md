@@ -6,7 +6,7 @@
 
 # rules-architect
 
-> Self-improving rule architecture for Claude Code. Install 3 core hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention.
+> Self-improving rule architecture for Claude Code **and Codex CLI**. Install 3 core hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention. (First-class Codex support: see the [Codex support](#codex-support-first-class) section.)
 
 ## What's in the box
 
@@ -67,7 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # Pin to a specific tag
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.1.1
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
 ```
 
 ### Or manual install (more transparent)
