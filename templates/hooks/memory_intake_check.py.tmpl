@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """
-PreToolUse Write/Edit hook: when assistant writes to a CC memory file
+PreToolUse hook: when assistant writes to a CC memory file
 (MEMORY.md, feedback_*.md, reference_*.md under any memory/ dir),
 inject the 5-question rule placement SOP.
 
-Self-contained — does not reference external CLAUDE.md sections.
-Generic — works with any CC project.
+Dual-runtime — works under both Claude Code and Codex CLI:
+  - Claude Code: Write/Edit/MultiEdit tools carry tool_input.file_path
+  - Codex CLI:   apply_patch tool carries only tool_input.command (patch text);
+                 target paths are parsed from the `*** Add/Update/Delete/Move`
+                 headers. Codex's hook I/O contract (snake_case stdin fields +
+                 hookSpecificOutput.additionalContext) is identical to CC's, so
+                 the same script serves both — only path extraction differs.
+
+Self-contained — does not reference external CLAUDE.md sections and imports
+nothing beyond stdlib (the apply_patch parser is inlined by design).
+Generic — works with any CC / codex project.
 
 Dedupe: per-session lock (~/.cache/claude-hooks/memory-intake-<sid>.lock,
         auto-cleaned at SessionStart by cleanup_hook.py)
@@ -15,6 +24,7 @@ Installed by rules-architect skill v{{SKILL_VERSION}}
 """
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -45,13 +55,50 @@ def log_audit(hook: str, decision: str, **kwargs) -> None:
         pass
 
 
+# apply_patch (Codex) has no structured path field — parse the patch headers.
+# Covers: "*** Add File: x", "*** Update File: x", "*** Delete File: x",
+# "*** Move to: x". Verified against Codex CLI v0.144.x apply_patch payloads.
+_PATCH_PATH_RE = re.compile(
+    r"^\*\*\* (?:Add File|Update File|Delete File|Move to):\s+(.+?)\s*$",
+    re.MULTILINE,
+)
+
+
+def paths_from_apply_patch(command: str) -> list:
+    """Extract touched file paths from an apply_patch command string."""
+    if not isinstance(command, str) or not command:
+        return []
+    return [m.group(1).strip().strip('"') for m in _PATCH_PATH_RE.finditer(command)]
+
+
+def candidate_paths(tool_input: dict) -> list:
+    """All file paths this tool call would touch, across CC and Codex shapes."""
+    if not isinstance(tool_input, dict):
+        return []
+    paths = []
+    # Claude Code: Write/Edit/MultiEdit
+    fp = tool_input.get("file_path")
+    if isinstance(fp, str) and fp:
+        paths.append(fp)
+    # Codex: apply_patch (patch text in tool_input.command)
+    paths.extend(paths_from_apply_patch(tool_input.get("command", "")))
+    return paths
+
+
 def is_memory_path(p: str) -> bool:
-    """Detect CC memory files: */memory/MEMORY.md, */memory/feedback_*.md, */memory/reference_*.md"""
-    if not isinstance(p, str):
+    """Detect memory files: <any>/memory/MEMORY.md, feedback_*.md, reference_*.md.
+
+    Segment-aware (not a raw substring test) so it also matches Codex
+    apply_patch relative paths like "memory/feedback_x.md" (no leading slash),
+    where the old "/memory/" substring check would silently miss root-level
+    memory writes.
+    """
+    if not isinstance(p, str) or not p:
         return False
-    if "/memory/" not in p and "\\memory\\" not in p:
+    parts = p.replace("\\", "/").split("/")
+    if "memory" not in parts[:-1]:   # 'memory' must be a directory component
         return False
-    name = p.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    name = parts[-1].lower()
     return (
         name == "memory.md"
         or name.startswith("feedback_")
@@ -89,24 +136,22 @@ def main() -> int:
 
     session_id = data.get("session_id", "unknown")
     tool_input = data.get("tool_input") or {}
-    file_path = (
-        tool_input.get("file_path", "") if isinstance(tool_input, dict) else ""
-    )
 
-    if not is_memory_path(file_path):
+    hit = next((p for p in candidate_paths(tool_input) if is_memory_path(p)), None)
+    if hit is None:
         return 0
 
     lock = CACHE / f"memory-intake-{session_id}.lock"
     if lock.exists():
         log_audit("memory_intake_check", "dedupe-skip",
-                  session=session_id, path=file_path)
+                  session=session_id, path=hit)
         return 0
     lock.touch()
 
     output = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": REMINDER}}
     print(json.dumps(output, ensure_ascii=False))
     log_audit("memory_intake_check", "inject",
-              session=session_id, path=file_path)
+              session=session_id, path=hit)
     return 0
 
 

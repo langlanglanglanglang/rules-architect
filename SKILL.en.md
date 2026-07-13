@@ -179,7 +179,7 @@ Show user a structured diff:
 - ❌ Project-specific hooks (e.g. `mr_created_reminder` for codeup MCP) — see `examples/`
 - ❌ Business path-scoped rules (proto / sql / release-notes / meta-md) — see `examples/`
 - ❌ L3 CLAUDE.md audit — delegated to `claude-md-management:claude-md-improver`
-- ❌ Cross-tool support — CC-only. codex / gemini users: see README "Cross-tool" section
+- ⚠️ codex is first-class (`install_codex_hooks.py` installs hooks natively); tools with no hook contract (gemini, etc.) see README "Cross-tool" section
 
 
 ## Content Preservation Guarantees

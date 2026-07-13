@@ -185,7 +185,7 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 - ❌ 项目特有 hook（如给 codeup MCP 用的 `mr_created_reminder`）— 看 `examples/`
 - ❌ 业务 path-scoped 规则（proto / sql / release-notes / meta-md）— 看 `examples/`
 - ❌ L3 CLAUDE.md 审计 — 委托给 `claude-md-management:claude-md-improver`
-- ❌ 跨工具支持 — 仅 CC。codex / gemini 用户：见 README 「跨工具」节
+- ⚠️ codex 一等公民（`install_codex_hooks.py` 原生装 hook）；gemini 等无 hook 契约的工具见 README 「跨工具」节
 
 ## 内容保留承诺
 
@@ -225,7 +225,8 @@ python3 scripts/diagnose.py --json > /tmp/ra-after.json
 ├── README.en.md                          # 英文版
 ├── scripts/
 │   ├── diagnose.py                       # 扫 L0-L5，--json 输出
-│   ├── install_hooks.py                  # deep-merge 到 settings.json
+│   ├── install_hooks.py                  # deep-merge 到 settings.json（CC）
+│   ├── install_codex_hooks.py            # deep-merge 到 ~/.codex/hooks.json（codex）
 │   ├── install_rule_intake.py            # 项目级 path-scoped 安装
 │   ├── install_personal_md_section.py    # 加 §六 到 CLAUDE-personal.md
 │   ├── install_hook_from_memory.py       # 从 memory 生成 hook

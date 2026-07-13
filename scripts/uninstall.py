@@ -30,7 +30,10 @@ from pathlib import Path
 
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-MANIFEST_PATH = Path.home() / ".claude" / ".rules-architect-manifest.json"
+MANIFEST_PATH = Path(os.environ.get("RULES_ARCHITECT_MANIFEST")
+                     or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
+CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
+CODEX_HOOKS_JSON = CODEX_HOME / "hooks.json"
 
 
 def info(msg): print(f"  ℹ {msg}")
@@ -74,14 +77,15 @@ def confirm(msg: str, default_yes: bool = False) -> bool:
     return a.startswith("y")
 
 
-def remove_installed_files(manifest, dry_run, force, non_interactive):
+def remove_installed_files(manifest, dry_run, force, non_interactive,
+                           key="installed_files"):
     removed_any = False
-    for entry in list(manifest.get("installed_files", [])):
+    for entry in list(manifest.get(key, [])):
         p = Path(entry["path"])
         recorded_hash = entry.get("hash_sha256")
         if not p.exists():
             info(f"{p}: already gone, skip")
-            manifest["installed_files"].remove(entry)
+            manifest[key].remove(entry)
             continue
         try:
             actual = file_sha256(p)
@@ -103,7 +107,7 @@ def remove_installed_files(manifest, dry_run, force, non_interactive):
         else:
             p.unlink()
             ok(f"Deleted {p}")
-        manifest["installed_files"].remove(entry)
+        manifest[key].remove(entry)
         removed_any = True
     return removed_any
 
@@ -155,6 +159,55 @@ def remove_settings_hooks(manifest, dry_run):
         manifest["settings_hooks_added"] = []
     else:
         info("No matching hook entries in settings.json")
+
+
+def remove_codex_hooks(manifest, dry_run):
+    """Remove only our entries from ~/.codex/hooks.json (mirror of
+    remove_settings_hooks, but a codex UserPromptSubmit entry carries no
+    'matcher' key → matcher is None, so compare with None default)."""
+    added = manifest.get("codex_hooks_added", [])
+    if not added or not CODEX_HOOKS_JSON.exists():
+        return
+    try:
+        config = json.loads(CODEX_HOOKS_JSON.read_text())
+    except Exception as e:
+        err(f"codex hooks.json unreadable: {e}")
+        return
+
+    targets = set((e["event"], e["matcher"], e["command"]) for e in added)
+    hooks_section = config.get("hooks", {})
+    removed = 0
+    for event in list(hooks_section.keys()):
+        new_configs = []
+        for c in hooks_section[event]:
+            matcher = c.get("matcher")  # None when key absent (UserPromptSubmit)
+            kept_hooks = []
+            for h in c.get("hooks", []):
+                cmd = h.get("command", "")
+                if (event, matcher, cmd) in targets:
+                    removed += 1
+                    continue
+                kept_hooks.append(h)
+            if kept_hooks:
+                c2 = dict(c)
+                c2["hooks"] = kept_hooks
+                new_configs.append(c2)
+            # else: drop empty group entirely
+        if new_configs:
+            hooks_section[event] = new_configs
+        else:
+            del hooks_section[event]
+
+    if removed:
+        if dry_run:
+            info(f"DRY-RUN: would remove {removed} entries from codex hooks.json")
+        else:
+            atomic_write(CODEX_HOOKS_JSON,
+                         json.dumps(config, indent=2, ensure_ascii=False))
+            ok(f"Removed {removed} entries from codex hooks.json")
+        manifest["codex_hooks_added"] = []
+    else:
+        info("No matching entries in codex hooks.json")
 
 
 def remove_personal_sections(manifest, dry_run, force, non_interactive):
@@ -213,6 +266,7 @@ def print_uninstall_preservation_summary() -> None:
     print("   ✋ Your CLAUDE-personal.md outside §六  — §一~§五 (and others) preserved")
     print("   ✋ Other hooks in settings.json         — only our 3 entries removed")
     print("   ✋ Other .claude/rules/*.md             — only rule-intake.md removed")
+    print("   ✋ Other entries in codex hooks.json    — only our entries removed")
     print()
     print("   Files you modified locally (hash mismatch) → skipped with warning, never deleted.")
     print()
@@ -239,6 +293,8 @@ def main() -> int:
     print(f"   Installed files: {len(manifest.get('installed_files', []))}")
     print(f"   Settings hook entries: {len(manifest.get('settings_hooks_added', []))}")
     print(f"   Personal MD sections: {len(manifest.get('personal_md_sections', []))}")
+    print(f"   Codex hook files: {len(manifest.get('codex_installed_files', []))}")
+    print(f"   Codex hook entries: {len(manifest.get('codex_hooks_added', []))}")
     print()
 
     if not args.non_interactive:
@@ -251,6 +307,13 @@ def main() -> int:
 
     print("\n--- Removing hook entries from settings.json ---")
     remove_settings_hooks(manifest, args.dry_run)
+
+    print("\n--- Removing Codex hook files ---")
+    remove_installed_files(manifest, args.dry_run, args.force,
+                           args.non_interactive, key="codex_installed_files")
+
+    print("\n--- Removing hook entries from codex hooks.json ---")
+    remove_codex_hooks(manifest, args.dry_run)
 
     print("\n--- Removing §六 sections from personal markdown ---")
     remove_personal_sections(manifest, args.dry_run,

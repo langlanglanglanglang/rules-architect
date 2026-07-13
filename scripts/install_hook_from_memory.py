@@ -40,7 +40,8 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "hooks" / "generated-hook-skeleton.py.tmpl"
 HOOKS_DEST = Path.home() / ".claude" / "hooks"
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-MANIFEST_PATH = Path.home() / ".claude" / ".rules-architect-manifest.json"
+MANIFEST_PATH = Path(os.environ.get("RULES_ARCHITECT_MANIFEST")
+                     or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
 
 
 def info(msg): print(f"  ℹ {msg}")
