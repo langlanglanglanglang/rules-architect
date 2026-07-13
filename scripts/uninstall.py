@@ -51,6 +51,11 @@ def file_sha256(p: Path) -> str:
     return h.hexdigest()
 
 
+def text_sha256(t: str) -> str:
+    # Matches install_personal_md_section.py's section_hash computation.
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".",
@@ -231,6 +236,22 @@ def remove_personal_sections(manifest, dry_run, force, non_interactive):
             re.escape(begin) + r".*?" + re.escape(end) + r"\n?",
             re.DOTALL
         )
+        # Content-protection: if the block was edited since install (hash differs
+        # from recorded section_hash), don't silently delete the user's edits.
+        recorded = s.get("section_hash")
+        m = pattern.search(text)
+        current_hash = text_sha256(m.group(0)) if m else None
+        if recorded and current_hash and current_hash != recorded and not force:
+            if non_interactive:
+                warn(f"{f}: §六 block modified since install — preserving "
+                     "(use --force to delete anyway)")
+                sections.remove(s)
+                continue
+            if not confirm(f"{f}: §六 block was edited since install. Delete anyway?",
+                           default_yes=False):
+                info(f"{f}: §六 preserved by user choice")
+                sections.remove(s)
+                continue
         new_text = pattern.sub("", text, count=1)
         if dry_run:
             info(f"DRY-RUN: would remove §六 markers from {f}")
@@ -288,7 +309,13 @@ def main() -> int:
         err(f"No manifest found at {MANIFEST_PATH} — nothing to uninstall")
         return 1
 
-    manifest = json.loads(MANIFEST_PATH.read_text())
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text())
+    except Exception as e:
+        err(f"Manifest at {MANIFEST_PATH} is unreadable ({e}).")
+        err("Refusing to uninstall — without a valid manifest we cannot know "
+            "which files are ours. Fix or remove the manifest, then re-run.")
+        return 1
     # Dry-run must not mutate any state that affects observable output; the
     # remove_* helpers pop entries from the manifest dict, so operate on a
     # throwaway copy when previewing. (Real runs mutate the live manifest,

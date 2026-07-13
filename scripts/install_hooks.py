@@ -174,7 +174,14 @@ def load_manifest() -> dict:
         try:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
-            warn(f"Manifest unreadable, starting fresh: {MANIFEST_PATH}")
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+            try:
+                MANIFEST_PATH.rename(bad)
+                warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+                     "Old install entries are NOT auto-tracked — recover from that file.")
+            except Exception:
+                warn("Manifest unreadable and could not be quarantined; starting fresh")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,

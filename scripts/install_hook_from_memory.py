@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,10 +69,23 @@ def atomic_write(path, content):
         raise
 
 
+def _quarantine_corrupt_manifest():
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+    try:
+        MANIFEST_PATH.rename(bad)
+        warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+             "Old install entries are NOT auto-tracked — recover them from that file.")
+    except Exception:
+        warn("Manifest unreadable and could not be quarantined; starting fresh")
+
+
 def load_manifest():
     if MANIFEST_PATH.exists():
-        try: return json.loads(MANIFEST_PATH.read_text())
-        except: pass
+        try:
+            return json.loads(MANIFEST_PATH.read_text())
+        except Exception:
+            _quarantine_corrupt_manifest()
     return {"skill_name": "rules-architect", "skill_version": SKILL_VERSION,
             "installed_files": [], "settings_hooks_added": [], "last_install_at": None}
 
@@ -147,8 +161,14 @@ def main():
     os.chmod(dest_path, 0o755)
     ok(f"Installed {dest_path}")
 
-    # Merge settings.json
+    # Merge settings.json (back it up first — parity with the other installers,
+    # which never mutate settings.json without a timestamped snapshot)
+    settings_backup = None
     if SETTINGS_PATH.exists():
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        settings_backup = SETTINGS_PATH.with_suffix(f".json.bak.{ts}")
+        shutil.copy2(SETTINGS_PATH, settings_backup)
+        ok(f"Backed up settings.json → {settings_backup.name}")
         settings = json.loads(SETTINGS_PATH.read_text())
     else:
         settings = {}
@@ -179,6 +199,8 @@ def main():
         "owner": "rules-architect",
         "kind": "generated-from-memory",
     })
+    if settings_backup is not None:
+        m["settings_backup_path"] = str(settings_backup)
     save_manifest(m)
     ok(f"Manifest updated")
 
