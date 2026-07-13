@@ -68,19 +68,23 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def load_manifest() -> dict:
+def load_manifest(dry_run: bool = False) -> dict:
     if MANIFEST_PATH.exists():
         try:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
-            ts = time.strftime("%Y%m%d-%H%M%S")
-            bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
-            try:
-                MANIFEST_PATH.rename(bad)
-                warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                     "Old install entries are NOT auto-tracked — recover from that file.")
-            except Exception:
-                warn("Manifest unreadable and could not be quarantined; starting fresh")
+            if dry_run:
+                warn("Manifest unreadable (DRY-RUN: would quarantine to "
+                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+            else:
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+                try:
+                    MANIFEST_PATH.rename(bad)
+                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+                         "Old install entries are NOT auto-tracked — recover from that file.")
+                except Exception:
+                    warn("Manifest unreadable and could not be quarantined; starting fresh")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -116,8 +120,8 @@ def extract_block(text: str):
     return m.group(0) if m else None
 
 
-def recorded_section_hash(target: Path):
-    for s in load_manifest().get("personal_md_sections", []):
+def recorded_section_hash(target: Path, dry_run: bool = False):
+    for s in load_manifest(dry_run).get("personal_md_sections", []):
         if s.get("file") == str(target):
             return s.get("section_hash")
     return None
@@ -200,7 +204,7 @@ def main() -> int:
         # install (its hash differs from the recorded section_hash), refuse to
         # overwrite unless --force. Mirrors the file hash-protection promise.
         if MARKER_BEGIN in existing:
-            rec = recorded_section_hash(target)
+            rec = recorded_section_hash(target, args.dry_run)
             cur = extract_block(existing)
             if rec and cur is not None and text_sha256(cur) != rec and not args.force:
                 warn(f"§六 block in {target.name} was modified since install "

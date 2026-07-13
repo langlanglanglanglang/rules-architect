@@ -68,7 +68,7 @@ PRESETS = {
     ),
 }
 
-keyword_choice = os.environ.get("RULE_INTAKE_KEYWORDS", "chinese").strip()
+keyword_choice = os.environ.get("RULE_INTAKE_KEYWORDS", "{{RULE_INTAKE_KEYWORDS}}").strip()
 if keyword_choice in PRESETS:
     pattern_src = PRESETS[keyword_choice]
 else:

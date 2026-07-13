@@ -173,19 +173,23 @@ def atomic_write(path: Path, content: str) -> None:
 
 
 # === Manifest (shared with CC installer; codex_* keys are additive) ===
-def load_manifest() -> dict:
+def load_manifest(dry_run: bool = False) -> dict:
     if MANIFEST_PATH.exists():
         try:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
-            ts = time.strftime("%Y%m%d-%H%M%S")
-            bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
-            try:
-                MANIFEST_PATH.rename(bad)
-                warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                     "Old install entries are NOT auto-tracked — recover from that file.")
-            except Exception:
-                warn("Manifest unreadable and could not be quarantined; starting fresh")
+            if dry_run:
+                warn("Manifest unreadable (DRY-RUN: would quarantine to "
+                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+            else:
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
+                try:
+                    MANIFEST_PATH.rename(bad)
+                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
+                         "Old install entries are NOT auto-tracked — recover from that file.")
+                except Exception:
+                    warn("Manifest unreadable and could not be quarantined; starting fresh")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -529,7 +533,7 @@ def main() -> int:
 
     backup_path = backup_hooks_json(args.dry_run)
 
-    manifest = load_manifest()
+    manifest = load_manifest(args.dry_run)
     if backup_path:
         manifest["codex_hooks_backup_path"] = backup_path
 
