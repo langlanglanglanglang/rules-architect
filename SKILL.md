@@ -16,7 +16,7 @@ triggers:
 
 > **中文** | [English](SKILL.en.md)
 
-Claude Code 的自我改进规则架构。安装 4 个 hook + 1 个 path-scoped rule + 维护文档，让规则归位变可靠，不再靠 CLAUDE.md 的 attention。
+Claude Code 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule + 维护文档，让规则归位变可靠，不再靠 CLAUDE.md 的 attention。
 
 ## 它解决的问题
 

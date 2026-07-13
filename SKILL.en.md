@@ -16,7 +16,7 @@ triggers:
 
 > [中文](SKILL.md) | **English**
 
-Self-improving rule architecture for Claude Code. Installs 4 hooks + 1 path-scoped rule + maintenance docs to make rule placement reliable, instead of relying on CLAUDE.md attention.
+Self-improving rule architecture for Claude Code. Installs 3 core hooks + 1 path-scoped rule + maintenance docs to make rule placement reliable, instead of relying on CLAUDE.md attention.
 
 ## The Problem This Solves
 

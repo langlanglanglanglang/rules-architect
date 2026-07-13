@@ -209,9 +209,11 @@ Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
 2. Removes only the hook entries this skill added from `settings.json`
 3. Restores `~/.claude/settings.json.bak.<ts>` only if user explicitly opts in
 
+**Deletes** (as a manifest-tracked installed file, hash-verified):
+- Project-level `.claude/rules/rule-intake.md` (if you edited it → hash mismatch → skipped/preserved)
+
 **Does NOT delete**:
 - Your own customizations to installed files (hash mismatch → skip with warning)
-- Project-level `.claude/rules/rule-intake.md` (manual delete required to avoid accidental cleanup)
 - Any L1 memory files (they're yours)
 
 ## Q&A

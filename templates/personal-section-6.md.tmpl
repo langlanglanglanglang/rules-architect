@@ -55,11 +55,11 @@ When any new rule arises (user correction / user says "from now on..." / I notic
 
 **Execute**:
 ```bash
-# Preview (dry-run)
-python3 ~/.claude/scripts/memory_sync.py push --feedback feedback_xxx --dry-run
+# Preview (dry-run) — requires $LESSONS_PATH or --lessons <path>
+python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push --feedback feedback_xxx --dry-run
 
 # Persist
-python3 ~/.claude/scripts/memory_sync.py push --feedback feedback_xxx --reason "..."
+python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push --feedback feedback_xxx --reason "..."
 ```
 
 **Push only**, no pull: memory is single-entry experience (with frontmatter), lessons is topic-aggregated markdown (multiple entries mixed per topic). Structures don't match — bidirectional sync is a false design (3 reviewers concluded).

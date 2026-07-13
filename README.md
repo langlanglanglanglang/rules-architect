@@ -200,9 +200,11 @@ python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
 2. 只删本 skill 添加的 hook 入口（保留你自己的其他 hook）
 3. 仅在用户显式选择时才恢复 settings.json 备份
 
+**会删**（作为 manifest 跟踪的已装文件，hash 校验）：
+- 项目级 `.claude/rules/rule-intake.md`（若你改过 → hash 不一致 → 跳过保留）
+
 **不会删**：
 - 你对装好文件的本地修改（hash 不一致 → 跳过并 warn）
-- 项目级 `.claude/rules/rule-intake.md`（需手动删，避免误清理）
 - 任何 L1 memory 文件（属于你的）
 
 ## Q&A

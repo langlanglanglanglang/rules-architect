@@ -132,17 +132,22 @@ def main():
     print(f"   Dest:    {HOOKS_DEST / (name + '.py')}")
     print()
 
-    # Render template
+    # Render template.
+    # REMINDER is injected as a Python string literal via json.dumps so any
+    # reminder text (backslashes, triple-quotes, newlines) is safe. Fields that
+    # land inside the module docstring are escaped so a stray backslash (e.g. a
+    # Windows path) or `"""` can't produce invalid Python.
+    def _docstring_safe(s: str) -> str:
+        return s.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+
     rendered = TEMPLATE_PATH.read_text()
-    # Escape triple-quote in reminder
-    safe_reminder = reminder.replace('"""', '\\"\\"\\"')
     rendered = (rendered
         .replace("{{NAME}}", name)
         .replace("{{EVENT}}", args.event)
-        .replace("{{MATCHER}}", args.matcher)
-        .replace("{{REMINDER}}", safe_reminder)
-        .replace("{{DESCRIPTION}}", args.description or f"Generated hook {name}")
-        .replace("{{FEEDBACK_SOURCE}}", args.feedback_source or "(manual)")
+        .replace("{{MATCHER}}", _docstring_safe(args.matcher))
+        .replace("{{REMINDER_JSON}}", json.dumps(reminder, ensure_ascii=False))
+        .replace("{{DESCRIPTION}}", _docstring_safe(args.description or f"Generated hook {name}"))
+        .replace("{{FEEDBACK_SOURCE}}", _docstring_safe(args.feedback_source or "(manual)"))
         .replace("{{SKILL_VERSION}}", SKILL_VERSION))
 
     dest_path = HOOKS_DEST / f"{name}.py"
