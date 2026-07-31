@@ -4,9 +4,13 @@
 
 > 另见：[与官方 claude-md-improver 的对比](docs/comparison-vs-claude-md-improver.md)
 
-**一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 模式选项详见[一键安装](#一键安装)节。
+**一键装**：`curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — 安装时可勾选 Claude Code、Codex 或两者，详见[一键安装](#一键安装)。
 
 > Claude Code **及 Codex CLI** 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。（Codex 一等公民支持见 [codex 支持](#codex-支持一等公民) 节。）
+
+默认运行还会生成一份**只读规则分布建议**：按 Claude/Codex 的加载规则扫描当前项目候选来源中的
+memory、CLAUDE、AGENTS、path rules 和已注册 hooks，按 Hooks / Rules /
+Team Baseline / Memory / Lessons 五组展示。报告不会自动迁移或覆盖规则。
 
 ## 安装包含什么
 
@@ -14,6 +18,7 @@
 |---|---|---|
 | 3 个核心 hook | SOP 注入 + 基础设施（memory_intake / rule_intake / cleanup） | ✅ 通用 |
 | 1 个 path-scoped rule (`rule-intake.md`) | 编辑规则文件时注入 SOP | ✅ |
+| 只读分布报告工具 | 扫描候选、校验分类、渲染五组建议 | ✅ |
 | `CLAUDE-personal.md` §六 模板 | 升级 / 退役 / 团队同步 流程 | ✅ |
 | `memory_sync.py` | 推送 memory → 团队 lessons（单向） | ✅ 参数化 |
 | `examples/` | 项目特定规则示例（仅参考） | 不会安装 |
@@ -52,11 +57,34 @@ CC 默认行为：所有细节都被塞进 **L1 memory**，因为它最方便。
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
 ```
 
-该命令 clone 仓库到 `~/.claude/skills/rules-architect/` 并装 3 个核心 hook（默认 mode B，最安全）。
+交互安装会让你选择：
+
+```text
+请选择安装目标（可多选）：
+  [ ] 1. Claude Code（Skill + Hook）
+  [ ] 2. Codex（Skill + Hook）
+输入 1、2 或 1,2 [默认 1,2]：
+```
+
+安装器只保留一份仓库，并为所选平台创建 Skill 发现入口：
+
+- Claude Code：`~/.claude/skills/rules-architect`
+- Codex：`~/.agents/skills/rules-architect`
+
+默认 mode B 同时安装所选平台的 3 个核心 Hook。无 TTY 时默认安装两者；
+CI 可用 `--platforms` 明确指定。
 
 更多控制：
 ```bash
-# 仅诊断 — 不动任何文件
+# 非交互安装 Claude + Codex Skill 和 Hook
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms claude,codex --non-interactive
+
+# 只安装 Codex
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms codex
+
+# 仅诊断
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
 
 # 全装（hook + rule-intake + §六）
@@ -69,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
 ```
 
-### 或者手动装（更透明）
+### 或者手动装 Claude Code（更透明）
 ```bash
 git clone https://github.com/langlanglanglanglang/rules-architect.git ~/.claude/skills/rules-architect
 python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
@@ -84,13 +112,52 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 ## 5 分钟上手
 
 ```bash
-# 1. 任何 CC 会话中触发 skill
+# 1a. Claude Code 中触发
 /rules-architect
 
-# 2. 首次跑选 mode D（仅诊断）—— 最安全，不动任何文件
+# 1b. Codex 中触发
+$rules-architect
+
+# 2. 默认先看只读规则分布报告——不动任何规则文件
 
 # 3. 看懂 5 层模型 + SOP 后：
-#    重跑选 mode A（全装）或 B / C（部分装）
+#    明确要求安装并选择 mode A（全装）或 B / C（部分装）
+```
+
+### 只读规则分布报告
+
+在 Claude Code 运行 `/rules-architect`，或在 Codex 运行
+`$rules-architect`（也可从 `/skills` 选择）时，主 agent 默认：
+
+1. 用 `scripts/rule_inventory.py` 建立当前项目候选清单
+2. 对每条候选选择唯一正文、加载适配器和 enforcement 模式
+3. 用 `recommendation_contract.py` 校验没有漏项或旧报告
+4. 用 `render_distribution.py` 输出五组建议
+
+对用户来说入口仍然只有一次 Skill 调用。语义分类由当前会话的主 agent
+完成；Python 工具只负责确定性扫描、校验和渲染，不声称能够脱离模型独立
+理解规则。
+
+Hook 会明确标注 `block` 或 `remind`。
+只有动作发生前能够确定性验证并阻断的 Hook 才会标成强制；现有
+`additionalContext` Hook 属于提醒。
+
+输出形态示例：
+
+```text
+Hooks（2）
+H01 [R-main-push][高][create] 禁止直接 push main
+执行：claude / block / PreToolUse / Bash
+
+Path-scoped Rules（1）
+P01 [R-proto-field][高][keep] Proto 字段编号必须递增
+
+Team Baseline（3）
+...
+Memory（1）
+...
+Lessons（1）
+...
 ```
 
 ## 各模式行为
@@ -99,8 +166,8 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 |---|---|---|
 | D. 仅诊断 | 零 | 无 |
 | C. 仅 path-scoped | 极低 | `.claude/rules/rule-intake.md` |
-| B. 仅 hook | 低 | `~/.claude/settings.json` + `~/.claude/hooks/*.py` |
-| A. 全装 | 中 | B + 给你项目的 `CLAUDE-personal.md` 加 §六 |
+| B. 仅 hook | 低 | 所选平台的 Claude/Codex Hook 配置与脚本 |
+| A. 全装 | 中 | B + 选择 Claude 时添加 path rule 与 `CLAUDE-personal.md` §六 |
 | E. 卸载 | — | 按 manifest 精确回滚 |
 
 
@@ -114,12 +181,15 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 | CLAUDE.md | ✋ 从不动 |
 | CLAUDE-personal.md（§一~§五 等） | ✋ 在 `<!-- rules-architect:section-6 BEGIN/END -->` markers **外**：从不动 |
 | `~/.claude/settings.json` 已有 hook | ✋ deep-merge 含冲突检测，全部保留 |
+| `~/.codex/hooks.json` 已有 hook | ✋ deep-merge 含冲突检测，全部保留 |
 | 已有的 `.claude/rules/*.md` | ✋ 只加 `rule-intake.md`（mode C/A） |
 | 你本地改过的文件 | ✋ hash 不一致 → 跳过（不覆盖、不删除） |
 
 本 skill **加了什么**（全部跟踪到 `~/.claude/.rules-architect-manifest.json`）：
 - `~/.claude/settings.json` 加 3 个 hook 入口（先备份 `.bak.<ts>`）
 - `~/.claude/hooks/` 加 3 个 hook 脚本
+- 选择 Codex 时：`~/.codex/hooks.json` 和 `~/.codex/hooks/` 加对应入口与脚本
+- 所选平台的 Skill 发现目录指向同一份 rules-architect checkout
 - 模式 C / A：`<project>/.claude/rules/rule-intake.md`
 - 模式 A 独有：`<project>/CLAUDE-personal.md` 加 §六 节（marker 保护，便于精确移除）
 
@@ -137,13 +207,16 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 | L3 CLAUDE.md | 团队基线 | 会话起点 |
 | L5 团队 lessons | 跨工具知识 | 手动 / 触发式 |
 
-**关键洞察**：L0 + L2 是 **100% 可靠**（无注意力稀释）。L3 在长会话中被忘记。本 skill 推动规则归位向 L0/L2 偏移。
+**关键洞察**：L0 + L2 能在更接近动作或文件的位置稳定触发，但触发不等于
+强制遵守。阻断 Hook、提醒 Hook、path-scoped 注入和外部 CI 需要分别标注。
+L3 在长会话中可能被稀释，因此本 skill 会建议把可局部化的规则下沉到 L0/L2。
 
 ## 本 skill 不做什么
 
-- ❌ **不是 CLAUDE.md 审计器** — 用 `claude-md-management:claude-md-improver`（Anthropic 官方插件）做 L3 审计
+- ❌ **不判断 CLAUDE.md 的事实正确性、命令时效性或写作质量** — 这些仍交给 `claude-md-management:claude-md-improver`
+- ❌ **默认不自动应用分布建议** — 报告与安装/迁移流程分离
 - ❌ **不是项目特定** — 业务 hook（`mr_created_reminder` 等）放 `examples/`
-- ⚠️ **codex 一等公民,gemini 需 shim** — codex 用 `install_codex_hooks.py` 原生装 3 hook;gemini 等无 hook 契约的工具见跨工具节
+- ⚠️ **codex 一等公民，gemini 需 shim** — 一键安装器会为 Codex 同时安装 Skill + Hook；gemini 等无 hook 契约的工具见跨工具节
 
 ## 配置
 
@@ -164,7 +237,14 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 
 ## codex 支持（一等公民）
 
-codex CLI（>= 0.124.0）有一套与 CC **I/O 完全同构**的 hook 系统。装法：
+推荐使用一键安装器并选择 Codex；它会同时安装 Codex Skill 和 Hook：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms codex
+```
+
+下面的命令只补装 Codex Hook，不安装 Skill：
 
 ```bash
 python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
@@ -176,6 +256,8 @@ python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
 - **信任步骤**:codex 要按 hash 授信,装完在 codex TUI 跑 `/hooks` 打开这 3 个 hook(或首次触发时确认)
 
 卸载走同一个 `uninstall.py`(codex 产物记在 manifest 的 `codex_*` 键,精准回滚)。
+
+安装后用 `$rules-architect` 调用 Skill，并通过 `/hooks` 审核新 Hook。
 
 L1 memory 不跨工具(codex 有自己的私有 store)——按设计 L1 本就不承载团队规则。
 
@@ -221,14 +303,15 @@ jq -c 'select(.decision == "inject")' ~/.cache/claude-hooks/audit.jsonl | tail
 ```
 
 **Q：如何升级到新版本？**
-A：重跑 `/rules-architect`。skill 会比对 manifest hash 显示会变化的内容。
+A：Claude Code 重跑 `/rules-architect`，Codex 重跑 `$rules-architect`。skill 会比对 manifest hash 显示会变化的内容。
 
 **Q：能和别的 CLAUDE.md 工具配合吗？**
 A：可以，特别推荐 `claude-md-management:claude-md-improver`（本 skill 把 L3 审计委托给它）。其它兼容工具见 SKILL.md。
 
 ## 问题反馈
 
-skill 位置：`~/.claude/skills/rules-architect/`。可复现测试用例见 `tests/`。
+Skill 位置：Claude Code 为 `~/.claude/skills/rules-architect/`，Codex 为
+`~/.agents/skills/rules-architect/`。可复现测试用例见 `tests/`。
 
 审计日志：`~/.cache/claude-hooks/audit.jsonl`
 Manifest：`~/.claude/.rules-architect-manifest.json`

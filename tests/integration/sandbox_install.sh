@@ -129,10 +129,11 @@ echo
 
 # === Step 7: Diagnose post-install (expect L0 grade A or B) ===
 echo ">>> Step 7: diagnose post-install"
+DIAG_JSON="$TMP_HOME/diag.json"
 python3 "$SKILL_DIR/scripts/diagnose.py" --memory-dir /nonexistent \
-  --rules-dir "$TMP_PROJECT/.claude/rules" --json > /tmp/diag.json
+  --rules-dir "$TMP_PROJECT/.claude/rules" --json > "$DIAG_JSON"
 grade=$(python3 -c "
-import json; d = json.load(open('/tmp/diag.json'))
+import json; d = json.load(open('$DIAG_JSON'))
 print(d['layers']['L0_hooks']['grade'])
 ")
 echo "  L0 grade after install: $grade"
@@ -154,8 +155,8 @@ description: Sandbox test entry — should be marked promoted by mark_memory_pro
 metadata:
   type: feedback
 ---
-Sandbox test rule body. After promotion, this stays in git history but
-the live file body should become a "Promoted to:" stub.
+Sandbox test rule body. After promotion, the original body must only remain
+in the backup and the live file must contain the promotion stub.
 MEMO_EOF
 
 # Write a reminder text file
@@ -187,8 +188,22 @@ python3 "$SKILL_DIR/scripts/mark_memory_promoted.py" \
     --target "L0 hook ~/.claude/hooks/sandbox_test_hook.py" \
     --memory-dir "$HOME/.claude/projects/sandbox-test/memory"
 
-grep -q "Promoted to:" "$HOME/.claude/projects/sandbox-test/memory/feedback_sandbox_test.md" || {
+grep -q '^Promoted to: L0 hook ~/.claude/hooks/sandbox_test_hook.py @' \
+  "$HOME/.claude/projects/sandbox-test/memory/feedback_sandbox_test.md" || {
     echo "  ❌ memory body not converted to stub"; exit 1
+}
+if grep -q "Sandbox test rule body" \
+  "$HOME/.claude/projects/sandbox-test/memory/feedback_sandbox_test.md"; then
+    echo "  ❌ original body remained in promoted stub"; exit 1
+fi
+backup_count=$(find "$HOME/.claude/projects/sandbox-test/memory" \
+  -name 'feedback_sandbox_test.md.bak.*' -type f | wc -l | tr -d ' ')
+test "$backup_count" -eq 1 || {
+    echo "  ❌ expected exactly one promotion backup, got $backup_count"; exit 1
+}
+grep -q "Sandbox test rule body" \
+  "$HOME/.claude/projects/sandbox-test/memory"/feedback_sandbox_test.md.bak.* || {
+    echo "  ❌ promotion backup does not contain original body"; exit 1
 }
 echo "  ✅ memory body converted to Promoted-to stub"
 

@@ -2,11 +2,16 @@
 
 > See also: [How does this compare to the official claude-md-improver?](docs/comparison-vs-claude-md-improver.md)
 
-**TL;DR install**: `curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — see [Quick install](#quick-install-one-liner) for mode options.
+**TL;DR install**: `curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash` — select Claude Code, Codex, or both during installation; see [Quick install](#quick-install-one-liner).
 
 # rules-architect
 
 > Self-improving rule architecture for Claude Code **and Codex CLI**. Install 3 core hooks + path-scoped rule to make rule placement reliable instead of relying on CLAUDE.md attention. (First-class Codex support: see the [Codex support](#codex-support-first-class) section.)
+
+The default run also produces a **read-only rule distribution report** across
+platform-resolved memory, CLAUDE, AGENTS, path rules, and registered hooks. It groups
+advice into Hooks / Rules / Team Baseline / Memory / Lessons without moving or
+overwriting rules.
 
 ## What's in the box
 
@@ -14,6 +19,7 @@
 |---|---|---|
 | 3 core hooks | SOP injection + base infrastructure (memory_intake / rule_intake / cleanup) | ✅ Universal |
 | 1 path-scoped rule (`rule-intake.md`) | Inject SOP when editing rule files | ✅ |
+| Read-only distribution tools | Inventory, validate, and render five-group advice | ✅ |
 | §六 template for `CLAUDE-personal.md` | Upgrade / retire / team sync flows | ✅ |
 | `memory_sync.py` | Push memory → team lessons (single direction) | ✅ Parametrized |
 | `examples/` | Non-generic project rules for inspiration | NOT installed |
@@ -53,11 +59,33 @@ Migration of your existing memory entries to per-user hooks is orchestrated by t
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash
 ```
 
-This clones the repo to `~/.claude/skills/rules-architect/` and installs the 3 core hooks (mode B, safest default).
+The interactive installer asks which targets to install:
+
+```text
+[ ] 1. Claude Code (Skill + Hooks)
+[ ] 2. Codex (Skill + Hooks)
+Choose 1, 2, or 1,2 [default 1,2]:
+```
+
+It keeps one canonical checkout and creates the selected discovery entries:
+
+- Claude Code: `~/.claude/skills/rules-architect`
+- Codex: `~/.agents/skills/rules-architect`
+
+Mode B installs the three core hooks for every selected platform. Without a
+TTY, both platforms are selected; CI can use `--platforms` explicitly.
 
 For more control:
 ```bash
-# Diagnose only — no changes
+# Non-interactive Claude + Codex Skill and Hook install
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms claude,codex --non-interactive
+
+# Codex only
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms codex
+
+# Diagnose only
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
 
 # Full install (hooks + rule-intake + §六)
@@ -70,7 +98,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
 ```
 
-### Or manual install (more transparent)
+### Or manual Claude Code install (more transparent)
 ```bash
 git clone https://github.com/langlanglanglanglang/rules-architect.git ~/.claude/skills/rules-architect
 python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
@@ -85,14 +113,54 @@ python3 ~/.claude/skills/rules-architect/scripts/install_hooks.py
 ## 5-minute getting started
 
 ```bash
-# 1. Trigger skill in any CC session
+# 1a. Trigger in Claude Code
 /rules-architect
 
-# 2. Choose mode D (diagnose only) for first run — SAFEST
-#    Reviews current state, suggests improvements, modifies nothing.
+# 1b. Trigger in Codex
+$rules-architect
+
+# 2. Review the default read-only distribution report.
+#    It inventories and classifies rules without modifying them.
 
 # 3. After understanding the 5-layer model + SOP:
-#    Re-run with mode A (full install) or B/C for partial
+#    Explicitly request install mode A (full) or B/C (partial)
+```
+
+### Read-only rule distribution report
+
+Running `/rules-architect` in Claude Code or `$rules-architect` in Codex
+(also selectable through `/skills`) makes the main agent:
+
+1. build a current-project inventory with `scripts/rule_inventory.py`;
+2. choose a canonical body, delivery adapters, and enforcement mode;
+3. validate full coverage with `recommendation_contract.py`;
+4. render the five groups with `render_distribution.py`.
+
+The user still performs one Skill invocation. The current session's main agent
+supplies semantic classification; the Python tools only discover, validate,
+and render deterministic data and do not claim standalone language
+understanding.
+
+Hooks are labeled `block` or `remind`.
+Only a deterministically testable pre-action block is called enforcement;
+existing `additionalContext` hooks are reminders.
+
+Example output shape:
+
+```text
+Hooks（2）
+H01 [R-main-push][高][create] Do not push directly to main
+执行：claude / block / PreToolUse / Bash
+
+Path-scoped Rules（1）
+P01 [R-proto-field][高][keep] Proto field numbers must increase
+
+Team Baseline（3）
+...
+Memory（1）
+...
+Lessons（1）
+...
 ```
 
 
@@ -106,12 +174,16 @@ This skill **never modifies your existing content** without explicit consent and
 | CLAUDE.md | ✋ Never touched |
 | CLAUDE-personal.md (§一~§五 etc) | ✋ Outside `<!-- rules-architect:section-6 BEGIN/END -->` markers: untouched |
 | Existing hooks in `~/.claude/settings.json` | ✋ Preserved via deep-merge with conflict detection |
+| Existing hooks in `~/.codex/hooks.json` | ✋ Preserved via deep-merge with conflict detection |
 | Existing `.claude/rules/*.md` files | ✋ Only `rule-intake.md` is added (mode C/A) |
 | Files you locally modified | ✋ Skipped on hash mismatch (no overwrite or delete) |
 
 What this skill **adds** (all tracked in `~/.claude/.rules-architect-manifest.json`):
 - 3 hook entries in `~/.claude/settings.json` (settings.json backed up to `.bak.<ts>` first)
 - 3 hook scripts in `~/.claude/hooks/`
+- When Codex is selected: matching entries/scripts in `~/.codex/hooks.json`
+  and `~/.codex/hooks/`
+- Selected-platform Skill discovery directories pointing to one checkout
 - Mode C / A: `<project>/.claude/rules/rule-intake.md`
 - Mode A only: §六 section in `<project>/CLAUDE-personal.md` (marker-protected for precise removal)
 
@@ -125,8 +197,8 @@ Uninstall is precise (per-manifest, hash-verified). Files you modified locally a
 |---|---|---|
 | D. Diagnose | Zero | None |
 | C. Path-scoped only | Very low | `.claude/rules/rule-intake.md` |
-| B. Hooks only | Low | `~/.claude/settings.json` + `~/.claude/hooks/*.py` |
-| A. Full | Medium | All of B + `<your-project>/CLAUDE-personal.md` (adds §六) |
+| B. Hooks only | Low | Hook configuration and scripts for selected platforms |
+| A. Full | Medium | B + Claude path rule and `CLAUDE-personal.md` §六 when Claude is selected |
 | E. Uninstall | — | Precise rollback per manifest |
 
 ## Architecture: 5-Layer Memory Model
@@ -139,13 +211,16 @@ Uninstall is precise (per-manifest, hash-verified). Files you modified locally a
 | L3 CLAUDE.md | Team baseline | Session start |
 | L5 team lessons | Cross-tool knowledge | Manual / triggered |
 
-**Key insight**: L0 + L2 are **100% reliable** (no attention dilution). L3 gets forgotten in long sessions. This skill pushes rule placement toward L0/L2.
+**Key insight**: L0 + L2 trigger closer to the relevant action or file, but
+triggering is not the same as enforcement. Blocking hooks, reminder hooks,
+path-scoped context, and external CI are reported separately.
 
 ## What this skill is NOT
 
-- ❌ **Not a CLAUDE.md auditor** — use `claude-md-management:claude-md-improver` (official Anthropic plugin) for L3 audit
+- ❌ **Does not judge CLAUDE.md factual correctness, command freshness, or writing quality** — keep using `claude-md-management:claude-md-improver`
+- ❌ **Does not apply distribution advice by default** — reporting and mutation are separate flows
 - ❌ **Not project-specific** — `mr_created_reminder`, `wiki_publish_check`, business rules go in your project's `.claude/rules/` or `~/.claude/hooks/` directly, see `examples/`
-- ⚠️ **codex is first-class; gemini needs a shim** — install on codex with `install_codex_hooks.py`; tools with no hook contract (gemini, etc.) see the Cross-tool section below
+- ⚠️ **codex is first-class; gemini needs a shim** — select Codex in `bootstrap.sh` to install both Skill and Hooks; tools with no hook contract (gemini, etc.) see the Cross-tool section below
 
 ## Configuration
 
@@ -166,8 +241,15 @@ After install, customize via env vars:
 
 ## Codex support (first-class)
 
-Codex CLI (>= 0.124.0) ships a hook system whose I/O contract is **identical**
-to CC's. Install with:
+Use the one-line installer and select Codex to install both the Skill and
+Hooks:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
+  bash -s -- --platforms codex
+```
+
+The following command installs Codex Hooks only; it does not install the Skill:
 
 ```bash
 python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
@@ -181,6 +263,9 @@ every difference:
 - `UserPromptSubmit` takes no matcher; `SessionStart` matcher is `startup|resume`
 - **trust step**: Codex trusts hooks by hash — after install, run `/hooks` in the
   Codex TUI to toggle the 3 on (or confirm on first use)
+
+Invoke the installed Skill with `$rules-architect` or select it through
+`/skills`.
 
 Uninstall uses the same `uninstall.py` (codex artifacts tracked under `codex_*`
 manifest keys for precise rollback).
@@ -230,14 +315,16 @@ jq -c 'select(.decision == "inject")' ~/.cache/claude-hooks/audit.jsonl | tail
 ```
 
 **Q: How do I update to a newer version?**
-A: Re-run `/rules-architect`. The skill compares manifest hashes and shows you what would change.
+A: Re-run `/rules-architect` in Claude Code or `$rules-architect` in Codex. The skill compares manifest hashes and shows you what would change.
 
 **Q: Can I use this with other CLAUDE.md tools?**
 A: Yes, especially `claude-md-management:claude-md-improver` (this skill delegates L3 audit to it). Other compatible tools listed in SKILL.md.
 
 ## Reporting issues
 
-The skill is at `~/.claude/skills/rules-architect/`. See `tests/` for reproducible test cases.
+The Skill is at `~/.claude/skills/rules-architect/` for Claude Code and
+`~/.agents/skills/rules-architect/` for Codex. See `tests/` for reproducible
+test cases.
 
 Audit log: `~/.cache/claude-hooks/audit.jsonl`
 Manifest: `~/.claude/.rules-architect-manifest.json`

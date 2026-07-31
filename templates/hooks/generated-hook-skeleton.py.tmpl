@@ -8,9 +8,10 @@ By rules-architect skill v{{SKILL_VERSION}}
 Event:   {{EVENT}}
 Matcher: {{MATCHER}}
 
-This hook was derived from one of your L1 memory rules and promoted to L0
-for 100% reliable real-time interception. Original memory entry is now a stub
-pointing here (see ~/.claude/projects/.../memory/{{FEEDBACK_SOURCE}}.md).
+This advisory hook was derived from one of your L1 memory rules and promoted
+to L0 for event-time context injection. It does not block a tool call. Original
+memory entry is now a stub pointing here (see
+~/.claude/projects/.../memory/{{FEEDBACK_SOURCE}}.md).
 
 Dedupe: per-session lock
 Audit:  ~/.cache/claude-hooks/audit.jsonl

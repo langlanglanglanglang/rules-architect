@@ -6,11 +6,32 @@
 tests/
 ├── README.md                            # This file
 ├── integration/
-│   └── sandbox_install.sh               # E2E: install → verify → uninstall
-└── unit/                                # (TBD — diagnose.py unit tests)
+│   ├── bootstrap_platforms.sh            # One-click Claude + Codex install
+│   ├── sandbox_install.sh               # E2E: install → verify → uninstall
+│   └── distribution_report.sh           # inventory → validate → render
+└── unit/
+    ├── test_rule_inventory.py           # source discovery + extraction
+    └── test_recommendations.py           # contract + five-group renderer
 ```
 
 ## Running
+
+### Unit tests
+
+```bash
+python3 -m unittest discover -s tests/unit -v
+```
+
+The inventory tests use isolated temporary homes/projects and verify
+exact-project memory mapping, Claude import safety, Codex override/fallback
+precedence, repository-root discovery from a subdirectory, recursive path
+rules, project hook registration coverage, redaction, code-fence exclusion,
+promoted-stub exclusion, and deterministic output.
+
+The recommendation tests verify full occurrence coverage, project/fingerprint
+binding, blocking-hook predicates, path-scoped targets, malformed
+duplicate/conflict rejection, unclassified rendering, and all five report
+groups.
 
 ### Integration: sandbox install/uninstall round-trip
 
@@ -26,6 +47,37 @@ bash tests/integration/sandbox_install.sh --keep
 
 Exit code 0 = all assertions passed.
 Exit code != 0 = some assertion failed; details printed.
+
+### Integration: platform-aware bootstrap
+
+```bash
+bash tests/integration/bootstrap_platforms.sh
+```
+
+Builds a local Git fixture with fake Claude/Codex version commands, runs the
+non-interactive one-click installer for Claude-only, Codex-only, and both, and
+verifies:
+
+- both Skill discovery entries resolve to the same checkout;
+- all three Claude and Codex Hook files are executable and registered;
+- pre-existing Codex Hook commands are preserved;
+- the shared manifest tracks both platforms.
+
+### Integration: read-only distribution pipeline
+
+```bash
+bash tests/integration/distribution_report.sh
+```
+
+Runs from an arbitrary project working directory, builds an isolated
+Claude/Codex inventory, validates a project- and fingerprint-bound
+recommendation, and checks that all five groups plus duplicate/conflict source
+details render successfully.
+
+This is a deterministic pipeline test. Its fixture classifier supplies known
+recommendations so the test can exercise inventory → contract → renderer
+mechanics. Semantic placement judgment is supplied by the main agent during a
+real `/rules-architect` run and is not reproducible as a standalone shell test.
 
 ### What sandbox_install.sh checks
 
@@ -56,7 +108,7 @@ returns non-zero. Suitable as a GitHub Actions / GitLab CI step:
 
 ## Coverage gaps (known)
 
-- **Unit tests for diagnose.py**: `unit/test_diagnose.py` — TBD
+- **Legacy diagnose.py grading** does not yet have dedicated unit fixtures.
 - **Cross-platform**: only tested on macOS/Linux (XDG paths). Windows untested.
 - **CC version mismatch**: integration test uses `--skip-version-check`. To test
   version detection, mock `claude --version` separately.

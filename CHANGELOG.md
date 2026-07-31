@@ -4,6 +4,39 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Interactive one-click target selection for Claude Code, Codex, or both.
+- Codex Skill discovery installation at `~/.agents/skills/rules-architect`,
+  sharing one checkout with Claude Code during dual-platform installs.
+- Platform-aware, read-only rule inventory across exact-project memory,
+  CLAUDE imports, AGENTS directory scope, recursive path rules, registered
+  Claude/Codex hooks, and an explicitly configured lessons file.
+- A compact executable recommendation contract with `--example`, plus a
+  five-group distribution renderer.
+- Unit coverage for discovery, extraction, deterministic fingerprints,
+  recommendation coverage, blocking-hook requirements, and tamper detection.
+- Isolated inventory → validate → render integration test.
+
+### Changed
+
+- `bootstrap.sh` now installs both the Skill and selected-platform Hooks;
+  `--platforms` and `--non-interactive` support reproducible CI installs.
+- `/rules-architect` now defaults to a read-only distribution report; existing
+  install and migration modes remain explicit, compatible flows.
+- Hook recommendations distinguish `block` from `remind` instead of treating
+  context injection as blocking.
+
+### Fixed
+
+- `mark_memory_promoted.py` no longer treats ordinary prose containing
+  `Promoted to:` as an existing promotion stub.
+- Promotion integration coverage now proves that the live body changed and the
+  backup contains the original text.
+- Temporary diagnostic artifacts no longer use a fixed shared `/tmp` filename.
+
 ## [2.3.0] — 2026-07-13
 
 ### Added

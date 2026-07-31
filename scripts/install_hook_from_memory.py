@@ -20,7 +20,7 @@ Usage (typically invoked by the main agent, NOT user CLI):
       --name no_mid_task_pause \\
       --event UserPromptSubmit \\
       --matcher '*' \\
-      --reminder-file /tmp/reminder.txt \\
+      --reminder-file /path/to/private-temp/reminder.txt \\
       --description "Force assistant to output text after thinking" \\
       --feedback-source feedback_no_mid_task_pause
 """

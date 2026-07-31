@@ -22,12 +22,16 @@ When any new rule arises (user correction / user says "from now on..." / I notic
 - "I prefer concise reports" → Q4 yes → **L1 memory**
 - "team rule: release accepts feature MR directly" → Q3 yes → **L3 CLAUDE-company.md §X**
 
-**Triple-layer enforcement (3 interceptions at write moment)**:
+**Triple-layer placement interception (3 triggers at write moment)**:
 - `~/.claude/hooks/memory_intake_check.py` — PreToolUse Write matcher path contains memory / feedback_* → auto-inject SOP
 - `~/.claude/hooks/rule_intake_reminder.py` — UserPromptSubmit + keywords ("from now on" / "always" / etc) → auto-inject SOP
 - `.claude/rules/rule-intake.md` — path-scoped matches all rule files → CC auto-injects SOP when editing
 
-**Why this design**: L3 CLAUDE.md attention dilutes in long sessions. Only L0 hook + L2 path-scoped provide 100% reliable interception **at the moment of writing**. This §六.5 text is for human reading + team alignment, not relied upon to trigger correct behavior.
+**Why this design**: L3 CLAUDE.md attention dilutes in long sessions. L0 hooks
+and L2 path-scoped rules trigger closer to the relevant action or file, but an
+`additionalContext` hook is still a reminder, not a blocking control. This §六.5
+text is for human reading + team alignment, not relied upon to trigger correct
+behavior.
 
 ### Upgrade (memory → CLAUDE-personal.md / CLAUDE-company.md)
 

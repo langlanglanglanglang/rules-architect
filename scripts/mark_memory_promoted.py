@@ -108,8 +108,9 @@ def main():
         frontmatter = m.group(1)
         body = m.group(2)
 
-    # Check if already a stub
-    if "Promoted to:" in body[:200]:
+    # Match only the generated-stub shape. Ordinary prose may legitimately
+    # mention the phrase "Promoted to:".
+    if re.match(r"^\s*Promoted to:\s+\S", body):
         warn(f"{path}: already marked as Promoted (skip)")
         return 0
 
