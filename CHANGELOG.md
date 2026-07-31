@@ -22,6 +22,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- All user-facing Skill dialogue, installer/uninstaller prompts, diagnostics,
+  Hook-injected guidance, and five-group reports now use Chinese consistently;
+  machine identifiers and the dedicated English reference docs remain stable.
 - `bootstrap.sh` now installs both the Skill and selected-platform Hooks;
   `--platforms` and `--non-interactive` support reproducible CI installs.
 - `/rules-architect` now defaults to a read-only distribution report; existing

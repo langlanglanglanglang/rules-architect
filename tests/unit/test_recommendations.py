@@ -80,16 +80,16 @@ class RecommendationContractTest(unittest.TestCase):
             validate_recommendations(recommendations, inventory), []
         )
         output = render(recommendations, inventory)
-        self.assertIn("Hooks（1）", output)
-        self.assertIn("claude / block / PreToolUse / Bash", output)
+        self.assertIn("Hook 强制规则（1）", output)
+        self.assertIn("claude / 阻断 / PreToolUse / Bash", output)
         self.assertIn("/repo/AGENTS.md:8", output)
-        self.assertIn("Path-scoped Rules（0）", output)
+        self.assertIn("路径规则（0）", output)
 
     def test_blocking_hook_requires_predicate(self):
         data = self.recommendations()
         del data["recommendations"][0]["enforcement"][0]["predicate"]
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("requires 'predicate'" in error for error in errors))
+        self.assertTrue(any("需要 'predicate'" in error for error in errors))
 
     def test_reminder_hook_requires_event_and_matcher(self):
         data = self.recommendations()
@@ -98,13 +98,13 @@ class RecommendationContractTest(unittest.TestCase):
         del enforcement["predicate"]
         del enforcement["matcher"]
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("requires 'matcher'" in error for error in errors))
+        self.assertTrue(any("需要 'matcher'" in error for error in errors))
 
     def test_every_occurrence_must_be_covered(self):
         data = self.recommendations()
         data["recommendations"] = []
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("uncovered occurrences" in error for error in errors))
+        self.assertTrue(any("尚未归类的出现位置" in error for error in errors))
 
     def test_tampered_inventory_is_rejected(self):
         inventory = self.inventory()
@@ -112,13 +112,13 @@ class RecommendationContractTest(unittest.TestCase):
         errors = validate_recommendations(
             self.recommendations(), inventory
         )
-        self.assertTrue(any("fingerprint does not match" in error for error in errors))
+        self.assertTrue(any("指纹与内容不匹配" in error for error in errors))
 
     def test_project_root_must_match(self):
         data = self.recommendations()
         data["project_root"] = "/different"
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("project_root mismatch" in error for error in errors))
+        self.assertTrue(any("project_root 不匹配" in error for error in errors))
 
     def test_relationship_must_be_an_object(self):
         data = self.recommendations()
@@ -133,7 +133,7 @@ class RecommendationContractTest(unittest.TestCase):
         item["enforcement"] = []
         item["canonical"] = {"target": "path_rule", "path": ".claude/rules/x.md"}
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("requires non-empty paths" in error for error in errors))
+        self.assertTrue(any("必须包含非空 paths" in error for error in errors))
 
     def test_unclassified_report_shows_text_and_source(self):
         inventory = self.inventory()
@@ -157,7 +157,7 @@ class RecommendationContractTest(unittest.TestCase):
             "confidence": "low",
         }]
         errors = validate_recommendations(data, self.inventory())
-        self.assertTrue(any("must be non-empty strings" in error for error in errors))
+        self.assertTrue(any("必须是非空字符串" in error for error in errors))
 
 
 if __name__ == "__main__":

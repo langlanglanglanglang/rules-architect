@@ -3,48 +3,48 @@ paths:
 {{RULE_INTAKE_PATHS}}
 ---
 
-# Rule File Edit: 5-Question Placement SOP (path-scoped)
+# 编辑规则文件：五问归位 SOP（路径规则）
 
-> About to edit a rule file (memory / `.claude/rules/*` / `CLAUDE-*.md` / any other project-defined rule docs).
-> **Before editing, walk the 5-Question Placement SOP** — avoid putting rules in the wrong layer.
+> 即将编辑规则文件（Memory、`.claude/rules/*`、`CLAUDE-*.md` 或项目定义的其他规则文档）。
+> **编辑前必须完成五问归位 SOP**，避免把规则放错层级。
 
-## 5-Question Placement SOP
+## 五问归位 SOP
 
-| # | Question | Pick layer |
+| # | 问题 | 选择层级 |
 |---|---|---|
-| 1 | Can trigger condition be expressed by tool/matcher? (e.g. "git commit" / "edit .proto") | **L0 hook** or **L2 path-scoped** |
-| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
-| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md @import / **L5** team lessons |
-| 4 | Personal collaboration preference only, team needn't know? | **L1** memory |
-| 5 | Overlaps with existing rule? grep keywords → yes → **edit existing**, don't create new | — |
+| 1 | 触发条件能用 tool/matcher 精确表达吗？例如 `git commit`、编辑 `.proto` | **L0 Hook** 或 **L2 路径规则** |
+| 2 | 只在编辑特定文件或目录时相关吗？ | **L2** `.claude/rules/` |
+| 3 | 全团队都需要吗（包括 Codex/Gemini 用户）？ | **L3** CLAUDE.md @import / **L5** 团队 Lessons |
+| 4 | 只是个人协作偏好，团队无需知道吗？ | **L1 Memory** |
+| 5 | 与已有规则重叠吗？先检索关键词；重叠则**修改已有规则** | — |
 
-## 5-Layer Decision Tree
+## 五层决策树
 
+```text
+出现新规则
+├── 需要实时拦截，且 tool/matcher 可表达 → L0 Hook
+├── 只在编辑特定文件时触发 → L2 路径规则
+├── 所有会话都需要 → L3 CLAUDE.md @import 链
+├── 个人协作偏好 → L1 Memory
+└── 跨工具或团队复盘经验 → L5 团队 Lessons
 ```
-New rule arises
-├── Real-time intercept + tool/matcher expressible → L0 hook (~/.claude/hooks/*.py)
-├── Triggered when editing specific files → L2 path-scoped (.claude/rules/*.md)
-├── All sessions need it → L3 CLAUDE.md @import chain
-├── Personal collaboration style → L1 memory
-└── Cross-tool / team retrospective → L5 team lessons (repo docs/ai/lessons.md)
-```
 
-## Anti-patterns (consequences of wrong placement)
+## 放错位置的后果
 
-| Wrong placement | Consequence |
+| 错误位置 | 后果 |
 |---|---|
-| Long template body in CLAUDE.md | Bloats per-session injection → attention dilution |
-| Rhythm rule left in L1 memory | Keeps getting forgotten → only L0 hook catches it reliably |
-| Team rule in personal memory | Teammates can't see (codex/gemini either) |
-| Proto-specific rule in CLAUDE.md | Injected even when editing .ts files → context pollution |
-| Hook with complex business logic | Hook can't see conversation history → write at L2/L3 instead |
+| 把长模板正文放进 CLAUDE.md | 每次会话注入膨胀，注意力被稀释 |
+| 把节奏规则留在 L1 Memory | 容易反复遗忘，应考虑 L0 Hook |
+| 把团队规则放进个人 Memory | 团队成员和其他工具都看不到 |
+| 把 Proto 专属规则放进 CLAUDE.md | 编辑无关文件时也会注入，污染上下文 |
+| 在 Hook 中编写复杂业务逻辑 | Hook 看不到完整会话历史，应改放 L2/L3 |
 
-## Required actions
+## 必须执行
 
-1. **Walk all 5 questions** → pick target layer
-2. **grep for overlap** → don't duplicate existing rules
-3. **Output your placement reason** in user-visible text:
-   > "This rule goes to LX because: ..."
-4. **Then edit**
+1. **完成全部五问**，选择目标层级。
+2. **检索现有规则**，不要重复创建。
+3. **向用户说明归位原因**：
+   > “这条规则应放在 LX，因为：……”
+4. **然后再编辑文件**。
 
-Installed by rules-architect skill v{{SKILL_VERSION}}.
+由 rules-architect Skill v{{SKILL_VERSION}} 安装。

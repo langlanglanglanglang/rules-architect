@@ -76,23 +76,23 @@ def find_memory_file(feedback_name, memory_dir_override=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--feedback", required=True,
-                    help="Memory feedback name (e.g. feedback_no_mid_task_pause)")
+                    help="记忆反馈名称（例如 feedback_no_mid_task_pause）")
     ap.add_argument("--target", required=True,
-                    help="Where it was promoted to (free-text description)")
+                    help="已提升到的位置（自由文本说明）")
     ap.add_argument("--memory-dir",
-                    help="Override memory directory")
+                    help="指定记忆目录")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     candidates = find_memory_file(args.feedback, args.memory_dir)
     if not candidates:
-        err(f"Memory file not found: {args.feedback}")
-        info("Searched in:")
+        err(f"未找到记忆文件：{args.feedback}")
+        info("已搜索：")
         for d in find_memory_dirs():
             info(f"  {d}")
         return 1
     if len(candidates) > 1:
-        warn(f"Multiple matches found, using first: {candidates[0]}")
+        warn(f"找到多个匹配项，将使用第一个：{candidates[0]}")
     path = candidates[0]
 
     text = path.read_text()
@@ -101,7 +101,7 @@ def main():
     # Extract frontmatter
     m = re.match(r"^(---\n.+?\n---\n)(.*)", text, re.DOTALL)
     if not m:
-        warn(f"{path}: no YAML frontmatter found, will treat whole file as body")
+        warn(f"{path}：未找到 YAML frontmatter，将把整个文件视为正文")
         frontmatter = ""
         body = text
     else:
@@ -111,20 +111,20 @@ def main():
     # Match only the generated-stub shape. Ordinary prose may legitimately
     # mention the phrase "Promoted to:".
     if re.match(r"^\s*Promoted to:\s+\S", body):
-        warn(f"{path}: already marked as Promoted (skip)")
+        warn(f"{path}：已标记为提升，跳过")
         return 0
 
-    new_body = f"\nPromoted to: {args.target} @ {today}\n\n(Original body preserved in git history.)\n"
+    new_body = f"\nPromoted to: {args.target} @ {today}\n\n（原始正文已保存在备份和 Git 历史中。）\n"
     new_text = frontmatter + new_body
 
-    print(f"\n📦 Marking memory as promoted:")
-    print(f"   File:   {path}")
-    print(f"   Target: {args.target}")
-    print(f"   Date:   {today}")
+    print(f"\n📦 正在把记忆标记为已提升：")
+    print(f"   文件：{path}")
+    print(f"   目标：{args.target}")
+    print(f"   日期：{today}")
     print()
 
     if args.dry_run:
-        info("DRY-RUN: would replace body with:")
+        info("仅预览：将把正文替换为：")
         for line in new_body.strip().split("\n"):
             info(f"   | {line}")
         return 0
@@ -135,15 +135,15 @@ def main():
     backup = path.with_suffix(path.suffix + f".bak.{ts}")
     try:
         shutil.copy2(path, backup)
-        ok(f"Backed up original → {backup.name}")
+        ok(f"已备份原文件 → {backup.name}")
     except Exception as e:
-        warn(f"Could not back up {path.name} ({e}); aborting to avoid data loss")
+        warn(f"无法备份 {path.name}（{e}）；为避免数据丢失，操作已中止")
         return 1
 
     atomic_write(path, new_text)
-    ok(f"Body replaced with Promoted-to stub")
-    info(f"   Original preserved at: {backup}")
-    info(f"   (also in git history if the memory dir is a repo)")
+    ok("正文已替换为提升位置占位说明")
+    info(f"   原文备份位置：{backup}")
+    info("   如果记忆目录是 Git 仓库，也可从 Git 历史找回")
     return 0
 
 

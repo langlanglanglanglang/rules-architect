@@ -8,18 +8,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=================================================="
-echo " rules-architect installer"
+echo " rules-architect 安装器"
 echo "=================================================="
-echo "  Will install to: ~/.claude/hooks/ and merge into ~/.claude/settings.json"
-echo "  Backup at:       ~/.claude/settings.json.bak.<ts>"
-echo "  Uninstall via:   bash $SCRIPT_DIR/uninstall.sh"
+echo "  安装位置：~/.claude/hooks/，并合并到 ~/.claude/settings.json"
+echo "  备份位置：~/.claude/settings.json.bak.<时间戳>"
+echo "  卸载命令：bash $SCRIPT_DIR/uninstall.sh"
 echo
 
 if [ "${1:-}" != "--non-interactive" ] && [ "${1:-}" != "--dry-run" ]; then
-  read -p "Continue? [y/N] " ans
+  read -p "是否继续？[y/N] " ans
   case "$ans" in
     y|Y) ;;
-    *) echo "Aborted"; exit 0 ;;
+    *) echo "已取消"; exit 0 ;;
   esac
 fi
 

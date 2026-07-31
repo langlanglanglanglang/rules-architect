@@ -14,11 +14,11 @@ except (ImportError, ValueError):
 
 
 GROUP_ORDER = [
-    ("hooks", "Hooks"),
-    ("path_rules", "Path-scoped Rules"),
-    ("team_baseline", "Team Baseline"),
-    ("memory", "Memory"),
-    ("lessons", "Lessons"),
+    ("hooks", "Hook 强制规则"),
+    ("path_rules", "路径规则"),
+    ("team_baseline", "团队基线"),
+    ("memory", "个人记忆"),
+    ("lessons", "团队经验"),
 ]
 PREFIX = {
     "hooks": "H",
@@ -33,6 +33,19 @@ CONFIDENCE_LABEL = {
     "low": "低",
     "not_applicable": "不适用",
 }
+ACTION_LABEL = {
+    "keep": "保留",
+    "move": "迁移",
+    "create": "创建",
+    "review": "复核",
+}
+DELIVERY_LABEL = {
+    "always_loaded": "始终加载",
+    "path_scoped": "按路径加载",
+    "on_demand": "按需加载",
+    "delivery": "加载方式",
+}
+MODE_LABEL = {"block": "阻断", "remind": "提醒", "unknown": "未知"}
 
 
 def load_json(path):
@@ -68,7 +81,7 @@ def format_adapter(adapter):
     platform = adapter.get("platform", "?")
     event = adapter.get("event")
     matcher = adapter.get("matcher")
-    parts = ["{} / {}".format(platform, mode)]
+    parts = ["{} / {}".format(platform, MODE_LABEL.get(mode, mode))]
     if event:
         parts.append(event)
     if matcher:
@@ -114,7 +127,7 @@ def render(data, inventory=None, verbose=False):
                 "{}{:02d} [{}][{}][{}]".format(
                     PREFIX[group], index, item["rule_id"],
                     CONFIDENCE_LABEL.get(confidence, confidence),
-                    item["action"],
+                    ACTION_LABEL.get(item["action"], item["action"]),
                 )
             )
             lines.append(item["summary"])
@@ -128,7 +141,10 @@ def render(data, inventory=None, verbose=False):
                 lines.append(
                     "加载：{}".format(
                         "；".join(
-                            d.get("type", "delivery")
+                            DELIVERY_LABEL.get(
+                                d.get("type", "delivery"),
+                                d.get("type", "delivery"),
+                            )
                             + (
                                 " " + ",".join(d.get("paths", []))
                                 if d.get("paths") else ""
@@ -158,7 +174,7 @@ def render(data, inventory=None, verbose=False):
                     lines.append("来源：" + "；".join(sources))
             lines.append("原因：" + item["reason"])
             if verbose:
-                lines.append("Occurrence IDs：" + ", ".join(item["occurrence_ids"]))
+                lines.append("出现位置 ID：" + ", ".join(item["occurrence_ids"]))
             lines.append("")
 
     for key, title in [
@@ -206,35 +222,35 @@ def render(data, inventory=None, verbose=False):
         else:
             for item in errors:
                 lines.append(
-                    "- ERROR {}：{}".format(
-                        item.get("path") or "(unknown)", item["message"]
+                    "- 错误 {}：{}".format(
+                        item.get("path") or "（未知）", item["message"]
                     )
                 )
             for item in skipped:
                 lines.append(
-                    "- SKIP {}：{}".format(item["path"], item["reason"])
+                    "- 跳过 {}：{}".format(item["path"], item["reason"])
                 )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("recommendations")
-    parser.add_argument("--inventory")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--output")
+    parser = argparse.ArgumentParser(description="渲染五档规则分布建议")
+    parser.add_argument("recommendations", help="建议 JSON 文件")
+    parser.add_argument("--inventory", help="规则清单 JSON 文件")
+    parser.add_argument("--verbose", action="store_true", help="显示出现位置 ID")
+    parser.add_argument("--output", help="将报告写入指定文件")
     args = parser.parse_args()
     try:
         recommendations = load_json(args.recommendations)
         inventory = load_json(args.inventory) if args.inventory else None
     except (OSError, ValueError) as exc:
-        print("invalid JSON: {}".format(exc), file=sys.stderr)
+        print("JSON 无效：{}".format(exc), file=sys.stderr)
         return 2
     errors = validate_recommendations(recommendations, inventory)
     if errors:
         for error in errors:
-            print("ERROR: " + error, file=sys.stderr)
+            print("错误：" + error, file=sys.stderr)
         return 1
     output = render(recommendations, inventory, args.verbose)
     if args.output:

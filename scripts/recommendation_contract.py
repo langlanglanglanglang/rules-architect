@@ -27,23 +27,23 @@ ENFORCEMENT_MODES = {"block", "remind"}
 
 def require_type(errors, obj, key, expected, where):
     if key not in obj:
-        errors.append("{}: missing '{}'".format(where, key))
+        errors.append("{}：缺少 '{}'".format(where, key))
         return None
     value = obj[key]
     if not isinstance(value, expected):
-        errors.append("{}: '{}' has wrong type".format(where, key))
+        errors.append("{}：'{}' 类型错误".format(where, key))
         return None
     return value
 
 
 def require_nonempty_strings(errors, values, where):
     if not values:
-        errors.append("{}: must contain at least one occurrence id".format(where))
+        errors.append("{}：至少需要一个出现位置 ID".format(where))
         return []
     valid = []
     for value in values:
         if not isinstance(value, str) or not value:
-            errors.append("{}: occurrence ids must be non-empty strings".format(where))
+            errors.append("{}：出现位置 ID 必须是非空字符串".format(where))
         else:
             valid.append(value)
     return valid
@@ -52,9 +52,9 @@ def require_nonempty_strings(errors, values, where):
 def validate_inventory(data):
     errors = []
     if not isinstance(data, dict):
-        return ["inventory: root must be an object"]
+        return ["inventory：根节点必须是对象"]
     if data.get("schema_version") != SCHEMA_VERSION:
-        errors.append("inventory: unsupported schema_version")
+        errors.append("inventory：不支持该 schema_version")
     fingerprint = require_type(
         errors, data, "inventory_fingerprint", str, "inventory"
     )
@@ -67,14 +67,14 @@ def validate_inventory(data):
     for idx, source in enumerate(data.get("sources", [])):
         where = "sources[{}]".format(idx)
         if not isinstance(source, dict):
-            errors.append("{}: must be an object".format(where))
+            errors.append("{}：必须是对象".format(where))
             continue
         for key in ("path", "content_hash", "kind"):
             require_type(errors, source, key, str, where)
     for idx, candidate in enumerate(data.get("rule_candidates", [])):
         where = "rule_candidates[{}]".format(idx)
         if not isinstance(candidate, dict):
-            errors.append("{}: must be an object".format(where))
+            errors.append("{}：必须是对象".format(where))
             continue
         occurrence_id = require_type(
             errors, candidate, "occurrence_id", str, where
@@ -83,11 +83,11 @@ def validate_inventory(data):
             require_type(errors, candidate, key, str, where)
         if occurrence_id:
             if occurrence_id in seen:
-                errors.append("{}: duplicate occurrence_id".format(where))
+                errors.append("{}：occurrence_id 重复".format(where))
             seen.add(occurrence_id)
     if fingerprint and not errors:
         if compute_inventory_fingerprint(data) != fingerprint:
-            errors.append("inventory: fingerprint does not match contents")
+            errors.append("inventory：指纹与内容不匹配")
     return errors
 
 
@@ -95,7 +95,7 @@ def validate_delivery(errors, delivery, where):
     for idx, adapter in enumerate(delivery):
         adapter_where = "{}[{}]".format(where, idx)
         if not isinstance(adapter, dict):
-            errors.append("{}: must be an object".format(adapter_where))
+            errors.append("{}：必须是对象".format(adapter_where))
             continue
         require_type(errors, adapter, "type", str, adapter_where)
         if "paths" in adapter:
@@ -104,7 +104,7 @@ def validate_delivery(errors, delivery, where):
                 isinstance(path, str) and path for path in paths
             ):
                 errors.append(
-                    "{}: paths must be a non-empty string list".format(
+                    "{}：paths 必须是非空字符串列表".format(
                         adapter_where
                     )
                 )
@@ -114,15 +114,15 @@ def validate_enforcement(errors, enforcement, where):
     for idx, adapter in enumerate(enforcement):
         adapter_where = "{}[{}]".format(where, idx)
         if not isinstance(adapter, dict):
-            errors.append("{}: must be an object".format(adapter_where))
+            errors.append("{}：必须是对象".format(adapter_where))
             continue
         if adapter.get("mode") not in ENFORCEMENT_MODES:
-            errors.append("{}: invalid mode".format(adapter_where))
+            errors.append("{}：mode 无效".format(adapter_where))
         require_type(errors, adapter, "platform", str, adapter_where)
         for field in ("event", "matcher"):
             if not isinstance(adapter.get(field), str) or not adapter[field]:
                 errors.append(
-                    "{}: hook enforcement requires '{}'".format(
+                    "{}：Hook 强制规则需要 '{}'".format(
                         adapter_where, field
                     )
                 )
@@ -132,7 +132,7 @@ def validate_enforcement(errors, enforcement, where):
                 or not adapter["predicate"]
             ):
                 errors.append(
-                    "{}: blocking hook requires 'predicate'".format(
+                    "{}：阻断型 Hook 需要 'predicate'".format(
                         adapter_where
                     )
                 )
@@ -140,16 +140,16 @@ def validate_enforcement(errors, enforcement, where):
 
 def validate_relationships(errors, data, key, known_occurrences):
     if key not in data:
-        errors.append("recommendations: missing '{}'".format(key))
+        errors.append("recommendations：缺少 '{}'".format(key))
         return
     relationships = data.get(key, [])
     if not isinstance(relationships, list):
-        errors.append("recommendations: '{}' has wrong type".format(key))
+        errors.append("recommendations：'{}' 类型错误".format(key))
         return
     for idx, item in enumerate(relationships):
         where = "{}[{}]".format(key, idx)
         if not isinstance(item, dict):
-            errors.append("{}: must be an object".format(where))
+            errors.append("{}：必须是对象".format(where))
             continue
         require_type(errors, item, "relation_id", str, where)
         require_type(errors, item, "summary", str, where)
@@ -159,24 +159,24 @@ def validate_relationships(errors, data, key, known_occurrences):
         if occurrences is not None:
             valid = require_nonempty_strings(errors, occurrences, where)
             if len(valid) < 2:
-                errors.append("{}: requires at least two occurrences".format(where))
+                errors.append("{}：至少需要两个出现位置".format(where))
             unknown = set(valid) - known_occurrences
             if unknown:
                 errors.append(
-                    "{}: unknown occurrences: {}".format(
+                    "{}：未知出现位置：{}".format(
                         where, ", ".join(sorted(unknown))
                     )
                 )
         if item.get("confidence") not in CONFIDENCE:
-            errors.append("{}: invalid confidence".format(where))
+            errors.append("{}：confidence 无效".format(where))
 
 
 def validate_recommendations(data, inventory=None):
     errors = []
     if not isinstance(data, dict):
-        return ["recommendations: root must be an object"]
+        return ["recommendations：根节点必须是对象"]
     if data.get("schema_version") != SCHEMA_VERSION:
-        errors.append("recommendations: unsupported schema_version")
+        errors.append("recommendations：不支持该 schema_version")
     require_type(
         errors, data, "inventory_fingerprint", str, "recommendations"
     )
@@ -199,21 +199,21 @@ def validate_recommendations(data, inventory=None):
         if data.get("inventory_fingerprint") != inventory.get(
             "inventory_fingerprint"
         ):
-            errors.append("recommendations: inventory fingerprint mismatch")
+            errors.append("recommendations：inventory 指纹不匹配")
         try:
             recommendation_root = str(Path(data.get("project_root", "")).resolve())
             inventory_root = str(Path(inventory.get("project_root", "")).resolve())
             if recommendation_root != inventory_root:
-                errors.append("recommendations: project_root mismatch")
+                errors.append("recommendations：project_root 不匹配")
         except (OSError, TypeError):
-            errors.append("recommendations: invalid project_root")
+            errors.append("recommendations：project_root 无效")
 
     rule_ids = set()
     covered = set()
     for idx, item in enumerate(recommendations):
         where = "recommendations[{}]".format(idx)
         if not isinstance(item, dict):
-            errors.append("{}: must be an object".format(where))
+            errors.append("{}：必须是对象".format(where))
             continue
         rule_id = require_type(errors, item, "rule_id", str, where)
         occurrences = require_type(
@@ -227,7 +227,7 @@ def validate_recommendations(data, inventory=None):
         canonical = require_type(errors, item, "canonical", dict, where) or {}
         require_type(errors, canonical, "path", str, where + ".canonical")
         if canonical.get("target") not in TARGETS:
-            errors.append("{}: invalid canonical target".format(where))
+            errors.append("{}：canonical target 无效".format(where))
         delivery = require_type(errors, item, "delivery", list, where) or []
         enforcement = require_type(
             errors, item, "enforcement", list, where
@@ -236,28 +236,28 @@ def validate_recommendations(data, inventory=None):
         validate_enforcement(errors, enforcement, where + ".enforcement")
         group = item.get("report_group")
         if group not in GROUPS:
-            errors.append("{}: invalid report_group".format(where))
+            errors.append("{}：report_group 无效".format(where))
         if item.get("action") not in ACTIONS:
-            errors.append("{}: invalid action".format(where))
+            errors.append("{}：action 无效".format(where))
         if item.get("confidence") not in CONFIDENCE:
-            errors.append("{}: invalid confidence".format(where))
+            errors.append("{}：confidence 无效".format(where))
         if group == "hooks" and not enforcement:
-            errors.append("{}: hooks group requires enforcement".format(where))
+            errors.append("{}：hooks 分组必须包含 enforcement".format(where))
         if group == "path_rules" and not any(
             isinstance(adapter, dict) and adapter.get("paths")
             for adapter in delivery
         ):
             errors.append(
-                "{}: path_rules group requires non-empty paths".format(where)
+                "{}：path_rules 分组必须包含非空 paths".format(where)
             )
         if rule_id:
             if rule_id in rule_ids:
-                errors.append("{}: duplicate rule_id".format(where))
+                errors.append("{}：rule_id 重复".format(where))
             rule_ids.add(rule_id)
         for occurrence_id in valid_occurrences:
             if occurrence_id in covered:
                 errors.append(
-                    "{}: occurrence '{}' covered more than once".format(
+                    "{}：出现位置 '{}' 被重复归类".format(
                         where, occurrence_id
                     )
                 )
@@ -266,7 +266,7 @@ def validate_recommendations(data, inventory=None):
     for idx, item in enumerate(unclassified):
         where = "unclassified[{}]".format(idx)
         if not isinstance(item, dict):
-            errors.append("{}: must be an object".format(where))
+            errors.append("{}：必须是对象".format(where))
             continue
         occurrences = require_type(
             errors, item, "occurrence_ids", list, where
@@ -276,11 +276,11 @@ def validate_recommendations(data, inventory=None):
         )
         require_type(errors, item, "reason", str, where)
         if item.get("confidence") not in CONFIDENCE:
-            errors.append("{}: invalid confidence".format(where))
+            errors.append("{}：confidence 无效".format(where))
         for occurrence_id in valid_occurrences:
             if occurrence_id in covered:
                 errors.append(
-                    "{}: occurrence '{}' covered more than once".format(
+                    "{}：出现位置 '{}' 被重复归类".format(
                         where, occurrence_id
                     )
                 )
@@ -297,13 +297,13 @@ def validate_recommendations(data, inventory=None):
         missing = known_occurrences - covered
         if unknown:
             errors.append(
-                "recommendations: unknown occurrences: {}".format(
+                "recommendations：未知出现位置：{}".format(
                     ", ".join(sorted(unknown))
                 )
             )
         if missing:
             errors.append(
-                "recommendations: uncovered occurrences: {}".format(
+                "recommendations：尚未归类的出现位置：{}".format(
                     ", ".join(sorted(missing))
                 )
             )
@@ -318,7 +318,7 @@ def example_contract():
         "recommendations": [{
             "rule_id": "R-example",
             "occurrence_ids": ["O-example"],
-            "summary": "Example rule",
+            "summary": "示例规则",
             "canonical": {"target": "agents_md", "path": "AGENTS.md"},
             "delivery": [],
             "enforcement": [{
@@ -328,7 +328,7 @@ def example_contract():
                 "matcher": "Bash",
             }],
             "report_group": "hooks",
-            "reason": "Example only",
+            "reason": "仅作示例",
             "confidence": "medium",
             "action": "review",
         }],
@@ -345,28 +345,28 @@ def load_json(path):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("recommendations", nargs="?")
-    parser.add_argument("--inventory")
-    parser.add_argument("--example", action="store_true")
+    parser = argparse.ArgumentParser(description="校验规则分布建议的数据契约")
+    parser.add_argument("recommendations", nargs="?", help="建议 JSON 文件")
+    parser.add_argument("--inventory", help="规则清单 JSON 文件")
+    parser.add_argument("--example", action="store_true", help="输出有效示例")
     args = parser.parse_args()
     if args.example:
         print(json.dumps(example_contract(), ensure_ascii=False, indent=2))
         return 0
     if not args.recommendations:
-        parser.error("recommendations is required unless --example is used")
+        parser.error("除非使用 --example，否则必须提供 recommendations")
     try:
         recommendations = load_json(args.recommendations)
         inventory = load_json(args.inventory) if args.inventory else None
     except (OSError, ValueError) as exc:
-        print("invalid JSON: {}".format(exc), file=sys.stderr)
+        print("JSON 无效：{}".format(exc), file=sys.stderr)
         return 2
     errors = validate_recommendations(recommendations, inventory)
     if errors:
         for error in errors:
-            print("ERROR: " + error, file=sys.stderr)
+            print("错误：" + error, file=sys.stderr)
         return 1
-    print("recommendations contract: valid")
+    print("建议数据契约：有效")
     return 0
 
 

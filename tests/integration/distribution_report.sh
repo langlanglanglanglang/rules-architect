@@ -165,11 +165,11 @@ python3 "$SKILL_DIR/scripts/recommendation_contract.py" \
 python3 "$SKILL_DIR/scripts/render_distribution.py" \
   "$RECOMMENDATIONS" --inventory "$INVENTORY" --output "$REPORT"
 
-grep -Eq 'Hooks（[1-9]' "$REPORT"
-grep -Eq 'Path-scoped Rules（[1-9]' "$REPORT"
-grep -Eq 'Team Baseline（[1-9]' "$REPORT"
-grep -Eq 'Memory（[1-9]' "$REPORT"
-grep -Eq 'Lessons（[1-9]' "$REPORT"
+grep -Eq 'Hook 强制规则（[1-9]' "$REPORT"
+grep -Eq '路径规则（[1-9]' "$REPORT"
+grep -Eq '团队基线（[1-9]' "$REPORT"
+grep -Eq '个人记忆（[1-9]' "$REPORT"
+grep -Eq '团队经验（[1-9]' "$REPORT"
 grep -q '重复关系（1）' "$REPORT"
 grep -q '冲突关系（1）' "$REPORT"
 grep -q "$TMP_PROJECT/AGENTS.md" "$REPORT"
@@ -191,7 +191,7 @@ if python3 "$SKILL_DIR/scripts/render_distribution.py" \
     echo "malformed recommendation unexpectedly rendered" >&2
     exit 1
 fi
-grep -Fq 'duplicates[0]: must be an object' "$MALFORMED_ERROR"
+grep -Fq 'duplicates[0]：必须是对象' "$MALFORMED_ERROR"
 if grep -q 'Traceback' "$MALFORMED_ERROR"; then
     echo "malformed recommendation caused a traceback" >&2
     exit 1

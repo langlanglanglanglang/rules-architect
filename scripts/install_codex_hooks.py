@@ -103,7 +103,7 @@ def parse_version(s: str) -> tuple:
 
 def check_codex_version(skip: bool) -> bool:
     if skip:
-        warn("Skipping Codex version check (--skip-version-check)")
+        warn("已跳过 Codex 版本检查（--skip-version-check）")
         return True
     try:
         out = subprocess.run(
@@ -111,24 +111,24 @@ def check_codex_version(skip: bool) -> bool:
             capture_output=True, text=True, timeout=5
         )
         if out.returncode != 0:
-            err(f"`codex --version` failed: {out.stderr}")
+            err(f"`codex --version` 执行失败：{out.stderr}")
             return False
         version_str = out.stdout.strip()
         current = parse_version(version_str)
         required = parse_version(MIN_CODEX_VERSION)
         if current < required:
             err(
-                f"Codex version {version_str} < required {MIN_CODEX_VERSION} "
-                "(hooks engine stabilized in v0.124.0)"
+                f"Codex 版本 {version_str} 低于最低要求 {MIN_CODEX_VERSION}"
+                "（Hook 引擎从 v0.124.0 起稳定）"
             )
             return False
-        ok(f"Codex version {version_str} >= {MIN_CODEX_VERSION}")
+        ok(f"Codex 版本 {version_str}，满足最低要求 {MIN_CODEX_VERSION}")
         return True
     except FileNotFoundError:
-        err("`codex` CLI not found in PATH. Install Codex CLI first.")
+        err("PATH 中找不到 `codex`，请先安装 Codex CLI。")
         return False
     except Exception as e:
-        err(f"Codex version check failed: {e}")
+        err(f"Codex 版本检查失败：{e}")
         return False
 
 
@@ -179,17 +179,16 @@ def load_manifest(dry_run: bool = False) -> dict:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
             if dry_run:
-                warn("Manifest unreadable (DRY-RUN: would quarantine to "
-                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+                warn("Manifest 无法读取；预览模式将使用空 Manifest，不改文件")
             else:
                 ts = time.strftime("%Y%m%d-%H%M%S")
                 bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
                 try:
                     MANIFEST_PATH.rename(bad)
-                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                         "Old install entries are NOT auto-tracked — recover from that file.")
+                    warn(f"Manifest 无法读取，已隔离为 {bad.name}；将使用新 Manifest。"
+                         "旧安装记录不会自动恢复，请从隔离文件找回。")
                 except Exception:
-                    warn("Manifest unreadable and could not be quarantined; starting fresh")
+                    warn("Manifest 无法读取且隔离失败；将使用新 Manifest")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -207,15 +206,15 @@ def save_manifest(m: dict) -> None:
 # === hooks.json backup ===
 def backup_hooks_json(dry_run: bool) -> Optional[str]:
     if not HOOKS_JSON.exists():
-        info("hooks.json does not exist yet — will create new")
+        info("hooks.json 尚不存在，将创建新文件")
         return None
     ts = time.strftime("%Y%m%d-%H%M%S")
     bak = HOOKS_JSON.with_suffix(f".json.bak.{ts}")
     if dry_run:
-        info(f"DRY-RUN: would back up {HOOKS_JSON} → {bak}")
+        info(f"预览：将备份 {HOOKS_JSON} → {bak}")
         return str(bak)
     shutil.copy2(HOOKS_JSON, bak)
-    ok(f"Backed up {HOOKS_JSON.name} → {bak.name}")
+    ok(f"已备份 {HOOKS_JSON.name} → {bak.name}")
     return str(bak)
 
 
@@ -233,7 +232,7 @@ def install_hook_file(
     # "abort" (fatal, stop the install).
     template_path = TEMPLATES_DIR / (template_name + ".tmpl")
     if not template_path.exists():
-        err(f"Template missing: {template_path}")
+        err(f"模板不存在：{template_path}")
         return "abort"
     raw = template_path.read_text()
     rendered = substitute(raw, vars_)
@@ -243,7 +242,7 @@ def install_hook_file(
     if dest_path.exists():
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
-            info(f"{template_name}: already installed and identical, skip")
+            info(f"{template_name}：已安装且内容一致，跳过")
             # Adopt into manifest if untracked (e.g. manifest was lost/reset),
             # so uninstall can still remove it precisely later.
             tracked = manifest.setdefault("codex_installed_files", [])
@@ -255,34 +254,34 @@ def install_hook_file(
                     "template_version": SKILL_VERSION,
                     "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
-                info(f"{template_name}: adopted into manifest (was untracked)")
+                info(f"{template_name}：已补录到 Manifest（此前未跟踪）")
             return "ok"
         if not force:
             if interactive:
-                print(f"\n  Hook {template_name} exists with different content.")
-                print("    [s]kip  [r]eplace  [b]ackup-then-replace  [a]bort")
-                choice = input("  Choice? ").strip().lower()
+                print(f"\n  Hook {template_name} 已存在，但内容不同。")
+                print("    [s] 跳过  [r] 替换  [b] 备份后替换  [a] 中止")
+                choice = input("  请选择：").strip().lower()
                 if choice == "s":
-                    info(f"{template_name}: skipped by user (will NOT be registered)")
+                    info(f"{template_name}：用户选择跳过，不会注册")
                     return "skip"
                 if choice == "b":
                     bak = dest_path.with_suffix(f".py.bak.{int(time.time())}")
                     if not dry_run:
                         shutil.copy2(dest_path, bak)
-                    info(f"{template_name}: backup → {bak.name}")
+                    info(f"{template_name}：已备份 → {bak.name}")
                 elif choice == "a":
-                    err("Aborted by user")
+                    err("用户已中止")
                     return "abort"
                 elif choice != "r":
-                    info(f"{template_name}: unrecognized choice, skipping (will NOT be registered)")
+                    info(f"{template_name}：无法识别选项，已跳过且不会注册")
                     return "skip"
             else:
-                warn(f"{template_name}: differs from template, skipping "
-                     "(use --force to overwrite; will NOT be registered)")
+                warn(f"{template_name}：与模板不同，已跳过。"
+                     "可用 --force 覆盖；本次不会注册。")
                 return "skip"
 
     if dry_run:
-        info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
+        info(f"预览：将写入 {dest_path}（{len(rendered)} 字节）")
         return "ok"
 
     atomic_write(dest_path, rendered)
@@ -290,7 +289,7 @@ def install_hook_file(
         os.chmod(dest_path, 0o755)
     except Exception:
         pass
-    ok(f"Installed {template_name} → {dest_path}")
+    ok(f"已安装 {template_name} → {dest_path}")
 
     manifest["codex_installed_files"] = [
         f for f in manifest.get("codex_installed_files", [])
@@ -315,7 +314,7 @@ def _adopt_registration(manifest: dict, event, matcher, command) -> None:
                and e.get("command") == command for e in tracked):
         tracked.append({"event": event, "matcher": matcher,
                         "command": command, "owner": "rules-architect"})
-        info(f"hooks.json: {event} adopted into manifest")
+        info(f"hooks.json：{event} 已补录到 Manifest")
 
 
 # === hooks.json deep-merge ===
@@ -330,10 +329,10 @@ def merge_hooks_json(
         try:
             config = json.loads(HOOKS_JSON.read_text())
         except Exception as e:
-            err(f"hooks.json unreadable: {e}")
+            err(f"hooks.json 无法读取：{e}")
             return (False, 0, 0)
         if not isinstance(config, dict):
-            err("hooks.json is not a JSON object")
+            err("hooks.json 根节点不是 JSON 对象")
             return (False, 0, 0)
     else:
         config = {}
@@ -349,8 +348,7 @@ def merge_hooks_json(
         # same-named file was skipped) — otherwise hooks.json would activate
         # that script as ours while it stays untracked in the manifest.
         if template_name not in registerable:
-            warn(f"hooks.json: not registering {template_name} — its file was "
-                 "skipped (not our content)")
+            warn(f"hooks.json：未注册 {template_name}，因为文件内容不是本项目版本")
             continue
         event = hook_def["event"]
         matcher = hook_def["matcher"]
@@ -369,7 +367,7 @@ def merge_hooks_json(
         if matcher is None:
             if any(h.get("command") == command
                    for e in hooks_section[event] for h in e.get("hooks", [])):
-                info(f"hooks.json: {event} already has our command, skip")
+                info(f"hooks.json：{event} 已有本项目命令，跳过")
                 _adopt_registration(manifest, event, matcher, command)
                 continue
             if hooks_section[event]:
@@ -405,7 +403,7 @@ def merge_hooks_json(
                 h.get("command", "") for h in existing_entry.get("hooks", [])
             ]
             if command in commands_in_entry:
-                info(f"hooks.json: {event}/{matcher} already has our command, skip")
+                info(f"hooks.json：{event}/{matcher} 已有本项目命令，跳过")
                 _adopt_registration(manifest, event, matcher, command)
                 continue
             if force:
@@ -416,14 +414,14 @@ def merge_hooks_json(
                     "event": event, "matcher": matcher,
                     "command": command, "owner": "rules-architect",
                 })
-                info(f"hooks.json: {event}/{matcher}: appended (forced)")
+                info(f"hooks.json：{event}/{matcher} 已强制追加")
             elif interactive:
-                print(f"\n  Conflict: {event}/{matcher} has commands:")
+                print(f"\n  冲突：{event}/{matcher} 已有命令：")
                 for c in commands_in_entry:
                     print(f"    {c}")
-                print(f"  Want to add: {command}")
+                print(f"  准备添加：{command}")
                 choice = input(
-                    "  [a]ppend  [s]kip  abort? ").strip().lower()
+                    "  [a] 追加  [s] 跳过，其他输入中止：").strip().lower()
                 if choice == "a":
                     existing_entry["hooks"].append(
                         {"type": "command", "command": command}
@@ -433,32 +431,32 @@ def merge_hooks_json(
                         "command": command, "owner": "rules-architect",
                     })
                 else:
-                    info(f"hooks.json: {event}/{matcher}: skipped")
+                    info(f"hooks.json：{event}/{matcher} 已跳过")
                     skipped_conflicts.append((event, matcher))
                     continue
             else:
-                warn(f"hooks.json: {event}/{matcher} conflicts, skipping. "
-                     "Re-run with --force or interactively")
+                warn(f"hooks.json：{event}/{matcher} 存在冲突，已跳过。"
+                     "请使用 --force 或交互模式重试。")
                 skipped_conflicts.append((event, matcher))
                 continue
 
     def _note_skips():
         for event, matcher in skipped_conflicts:
-            warn(f"NOT registered: {event}"
+            warn(f"未注册：{event}"
                  + (f"/{matcher}" if matcher else "")
-                 + " already has a different command — re-run with --force to append")
+                 + " 已有其他命令，可用 --force 追加")
 
     if not added_this_run:
         if skipped_conflicts:
             _note_skips()
-            info(f"hooks.json: 0 added, {len(skipped_conflicts)} skipped (conflicts)")
+            info(f"hooks.json：新增 0 项，因冲突跳过 {len(skipped_conflicts)} 项")
         else:
-            info("hooks.json: no changes needed")
+            info("hooks.json：无需修改")
         return (True, 0, len(skipped_conflicts))
 
     if dry_run:
-        info(f"DRY-RUN: would write {HOOKS_JSON}")
-        info(f"DRY-RUN: would add {len(added_this_run)} hook entries")
+        info(f"预览：将写入 {HOOKS_JSON}")
+        info(f"预览：将新增 {len(added_this_run)} 个 Hook 注册项")
         for a in added_this_run:
             info(f"   + {a['event']}"
                  + (f"/{a['matcher']}" if a['matcher'] else "")
@@ -467,7 +465,7 @@ def merge_hooks_json(
         return (True, len(added_this_run), len(skipped_conflicts))
 
     atomic_write(HOOKS_JSON, json.dumps(config, indent=2, ensure_ascii=False))
-    ok(f"hooks.json: added {len(added_this_run)} entries")
+    ok(f"hooks.json：已新增 {len(added_this_run)} 个注册项")
     _note_skips()
 
     existing = manifest.get("codex_hooks_added", [])
@@ -518,72 +516,70 @@ def smoke_test_all() -> bool:
         if not path.exists():
             continue
         if smoke_test_hook(path, sample):
-            ok(f"smoke-test {name}: pass")
+            ok(f"冒烟测试 {name}：通过")
         else:
-            err(f"smoke-test {name}: FAIL")
+            err(f"冒烟测试 {name}：失败")
             all_pass = False
     return all_pass
 
 
 def print_summary(backup_path: Optional[str], added: int, skipped: int) -> None:
     print()
-    print("✅ Content preservation summary (Codex):")
+    print("✅ 内容保护摘要（Codex）：")
     print()
-    print("   ✋ Codex private memory        — NOT touched")
-    print("   ✋ AGENTS.md                   — NOT touched")
-    print("   ✋ Existing hooks.json entries — deep-merge preserves everything else")
-    print("   ✋ Existing hook scripts       — skipped on hash mismatch")
+    print("   ✋ Codex 私有记忆              — 未修改")
+    print("   ✋ AGENTS.md                   — 未修改")
+    print("   ✋ hooks.json 其他配置         — deep-merge 完整保留")
+    print("   ✋ 已有 Hook 脚本              — 哈希不一致时跳过")
     print()
-    print("   ⭐ Changes (all tracked in manifest under codex_* keys):")
-    print(f"      + up to 3 hook scripts in {HOOKS_DEST}/")
-    print(f"      + {added} hook entr{'y' if added == 1 else 'ies'} in {HOOKS_JSON}")
+    print("   ⭐ 本次变更（全部记录在 Manifest 的 codex_* 字段）：")
+    print(f"      + {HOOKS_DEST}/ 中最多 3 个 Hook 脚本")
+    print(f"      + {HOOKS_JSON} 中 {added} 个 Hook 注册项")
     if skipped:
-        print(f"      ! {skipped} entr{'y' if skipped == 1 else 'ies'} SKIPPED (conflict) "
-              "— re-run with --force to append")
+        print(f"      ! 因冲突跳过 {skipped} 个注册项，可用 --force 追加")
     print("        (memory_intake_check / rule_intake_reminder / cleanup_hook)")
     if backup_path:
-        print(f"      → hooks.json backed up: {backup_path}")
+        print(f"      → hooks.json 备份：{backup_path}")
     print()
-    print("   Uninstall is precise (hash-verified per manifest):")
+    print("   卸载时按 Manifest 和哈希精确回滚：")
     print(f"      python3 {SKILL_DIR}/scripts/uninstall.py")
     print()
 
 
 def print_trust_notice() -> None:
-    print("🔐 Codex trust step (required — hooks stay OFF until you trust them):")
-    print("   Codex only runs non-managed command hooks after you review and")
-    print("   trust them by hash. To activate:")
-    print("     1. Start Codex, run  /hooks  in the TUI")
-    print("     2. Review the 3 rules-architect hooks and toggle them on")
-    print("   (Or: Codex will prompt for review on first matching tool use.)")
-    print("   If you edit a hook later, Codex marks it for re-review by hash.")
+    print("🔐 Codex 信任步骤（必须完成；信任前 Hook 不会运行）：")
+    print("   非托管命令 Hook 必须按哈希审核并信任。启用方法：")
+    print("     1. 启动 Codex，在 TUI 中运行 /hooks")
+    print("     2. 审核并启用 3 个 rules-architect Hook")
+    print("   也可以在第一次匹配触发时确认。")
+    print("   修改 Hook 后，Codex 会要求按新哈希重新审核。")
     print()
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Install rules-architect hooks for Codex CLI")
+    ap = argparse.ArgumentParser(description="为 Codex CLI 安装 rules-architect Hook")
     ap.add_argument("--dry-run", action="store_true",
-                    help="Print plan, modify nothing")
+                    help="仅显示计划，不修改文件")
     ap.add_argument("--non-interactive", action="store_true",
-                    help="Never prompt; default to safe choice (skip conflicts)")
+                    help="不询问；冲突时采用安全默认值（跳过）")
     ap.add_argument("--force", action="store_true",
-                    help="Overwrite existing files & hook entries")
+                    help="覆盖已有文件并追加 Hook 注册项")
     ap.add_argument("--rule-intake-keywords",
                     choices=["chinese", "english"], default="chinese",
-                    help="Keyword preset for rule_intake_reminder.py")
+                    help="rule_intake_reminder.py 的关键词预设")
     ap.add_argument("--skip-version-check", action="store_true",
-                    help="Bypass Codex version check (not recommended)")
+                    help="跳过 Codex 版本检查（不推荐）")
     args = ap.parse_args()
 
-    print(f"\n📦 rules-architect Codex installer v{SKILL_VERSION}")
-    print(f"   Mode: {'DRY-RUN' if args.dry_run else 'INSTALL'}")
-    print(f"   Interactive: {not args.non_interactive}")
-    print(f"   Force: {args.force}")
-    print(f"   Templates:  {TEMPLATES_DIR}")
-    print(f"   Codex home: {CODEX_HOME}")
-    print(f"   Hooks dest: {HOOKS_DEST}")
-    print(f"   hooks.json: {HOOKS_JSON}")
-    print(f"   Manifest:   {MANIFEST_PATH}")
+    print(f"\n📦 rules-architect Codex 安装器 v{SKILL_VERSION}")
+    print(f"   模式：{'仅预览' if args.dry_run else '安装'}")
+    print(f"   交互：{'是' if not args.non_interactive else '否'}")
+    print(f"   强制：{'是' if args.force else '否'}")
+    print(f"   模板目录：{TEMPLATES_DIR}")
+    print(f"   Codex 目录：{CODEX_HOME}")
+    print(f"   Hook 目录：{HOOKS_DEST}")
+    print(f"   配置文件：{HOOKS_JSON}")
+    print(f"   Manifest：{MANIFEST_PATH}")
     print()
 
     if not check_codex_version(args.skip_version_check):
@@ -596,13 +592,12 @@ def main() -> int:
         try:
             _cfg = json.loads(HOOKS_JSON.read_text())
         except Exception as e:
-            err(f"hooks.json is present but not valid JSON ({e}). "
-                "Fix it first so install stays atomic and rollback precise.")
+            err(f"hooks.json 不是有效 JSON（{e}）。"
+                "请先修复，以保证安装原子性和精确回滚。")
             return 2
         if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
-            err("hooks.json has an unexpected shape (root must be an object "
-                "with an object 'hooks'). Fix it first so the merge can't fail "
-                "mid-install after files are written.")
+            err("hooks.json 结构不符合预期：根节点和 hooks 必须是对象。"
+                "请先修复，避免写入文件后合并失败。")
             return 2
 
     backup_path = backup_hooks_json(args.dry_run)
@@ -617,7 +612,7 @@ def main() -> int:
         "RULE_INTAKE_KEYWORDS": args.rule_intake_keywords,
     }
 
-    print("\n--- Installing hook files ---")
+    print("\n--- 安装 Hook 文件 ---")
     registerable = set()
     for template_name, _ in CODEX_HOOK_TEMPLATES:
         status = install_hook_file(
@@ -626,18 +621,18 @@ def main() -> int:
             interactive=not args.non_interactive
         )
         if status == "abort":
-            err("Hook installation failed.")
+            err("Hook 安装失败。")
             return 3
         if status == "ok":
             registerable.add(template_name)
 
-    print("\n--- Merging hooks.json ---")
+    print("\n--- 合并 hooks.json ---")
     merge_ok, n_added, n_skipped = merge_hooks_json(
         manifest, args.dry_run, args.force,
         interactive=not args.non_interactive,
         registerable=registerable)
     if not merge_ok:
-        err("hooks.json merge failed.")
+        err("hooks.json 合并失败。")
         return 4
 
     if not args.dry_run:
@@ -645,15 +640,15 @@ def main() -> int:
         manifest["skill_version"] = SKILL_VERSION
         manifest["min_codex_version"] = MIN_CODEX_VERSION
         save_manifest(manifest)
-        ok(f"Manifest saved → {MANIFEST_PATH}")
+        ok(f"Manifest 已保存 → {MANIFEST_PATH}")
 
     if not args.dry_run:
-        print("\n--- Smoke-testing installed hooks ---")
+        print("\n--- 对已安装 Hook 执行冒烟测试 ---")
         smoke_test_all()
 
     print_summary(backup_path, n_added, n_skipped)
     print_trust_notice()
-    print("✨ Codex install complete.")
+    print("✨ Codex 安装完成。")
     print()
     return 0
 

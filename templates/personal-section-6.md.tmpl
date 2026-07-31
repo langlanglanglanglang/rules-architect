@@ -1,95 +1,106 @@
-## 六、Rule architecture maintenance (manual flow — NO auto-judgment)
+## 六、规则架构维护（人工流程，不自动判断）
 
-Memory system has 5 layers: **L0 hook** / **L1 memory** / **L2 path-scoped rules** / **L3 CLAUDE.md** / **L5 team lessons**. This section defines L1 ↔ L3/L5 upgrade / retire / sync flows, **all human-triggered** — CC platform does not provide a reliable `trigger_count` persistence path, so no automatic judgment.
+记忆系统分为五层：**L0 Hook** / **L1 Memory** / **L2 路径规则** /
+**L3 CLAUDE.md** / **L5 团队 Lessons**。本节规定 L1 与 L3/L5 之间的升级、
+退役和同步流程，全部由人工触发；平台没有可靠的 `trigger_count` 持久化机制，
+因此不做自动判断。
 
-### 6.5 5-Question Placement SOP (mandatory)
+### 6.5 五问归位 SOP（强制）
 
-When any new rule arises (user correction / user says "from now on..." / I notice a pattern), **before persisting**, walk these 5 questions:
+出现任何新规则时（用户纠正、用户说“以后……”、发现重复模式），保存前必须
+完成以下五问：
 
-| # | Question | Pick layer |
+| # | 问题 | 选择层级 |
 |---|---|---|
-| 1 | Can trigger condition be expressed by tool/matcher? | **L0 hook** / **L2 path-scoped** |
-| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
-| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md / **L5** lessons |
-| 4 | Personal collaboration preference only? | **L1** memory |
-| 5 | Overlaps with existing rule? grep keywords → yes → **edit existing**, don't create new | — |
+| 1 | 触发条件能用 tool/matcher 精确表达吗？ | **L0 Hook** / **L2 路径规则** |
+| 2 | 只在编辑特定文件或目录时相关吗？ | **L2** `.claude/rules/` |
+| 3 | 全团队都需要吗（包括 Codex/Gemini 用户）？ | **L3** CLAUDE.md / **L5** Lessons |
+| 4 | 只是个人协作偏好吗？ | **L1 Memory** |
+| 5 | 与已有规则重叠吗？先检索；重叠则修改已有规则 | — |
 
-**FORBIDDEN**: skipping the 5 questions and defaulting to L1 memory. This is the biggest source of leakage.
+**禁止**：跳过五问，直接把规则放入 L1 Memory。
 
-**Examples**:
-- "field number increment when editing .proto" → Q1 yes → **L2 `.claude/rules/proto.md`**
-- "I keep forgetting to attach MR link" → Q1 yes (PostToolUse hook) → **L0 hook**
-- "I prefer concise reports" → Q4 yes → **L1 memory**
-- "team rule: release accepts feature MR directly" → Q3 yes → **L3 CLAUDE-company.md §X**
+示例：
 
-**Triple-layer placement interception (3 triggers at write moment)**:
-- `~/.claude/hooks/memory_intake_check.py` — PreToolUse Write matcher path contains memory / feedback_* → auto-inject SOP
-- `~/.claude/hooks/rule_intake_reminder.py` — UserPromptSubmit + keywords ("from now on" / "always" / etc) → auto-inject SOP
-- `.claude/rules/rule-intake.md` — path-scoped matches all rule files → CC auto-injects SOP when editing
+- “编辑 `.proto` 时字段编号递增” → L2 `.claude/rules/proto.md`
+- “经常忘记附 MR 链接” → L0 PostToolUse Hook
+- “我偏好简洁报告” → L1 Memory
+- “团队发布规则” → L3 CLAUDE-company.md
 
-**Why this design**: L3 CLAUDE.md attention dilutes in long sessions. L0 hooks
-and L2 path-scoped rules trigger closer to the relevant action or file, but an
-`additionalContext` hook is still a reminder, not a blocking control. This §六.5
-text is for human reading + team alignment, not relied upon to trigger correct
-behavior.
+三层归位提醒：
 
-### Upgrade (memory → CLAUDE-personal.md / CLAUDE-company.md)
+- `memory_intake_check.py`：写入 Memory 前注入五问。
+- `rule_intake_reminder.py`：用户提出新规则时注入五问。
+- `.claude/rules/rule-intake.md`：编辑规则文件时注入五问。
 
-**Trigger**: user says "review memory" / "feedback X should upgrade" / "X keeps getting forgotten, write to CLAUDE.md".
+L0 Hook 与 L2 路径规则更接近相关动作或文件，但 `additionalContext` Hook
+仍是提醒，不是阻断控制。本节用于人工阅读和团队对齐。
 
-**Steps**:
-1. Read corresponding `~/.claude/projects/.../memory/feedback_*.md`
-2. Extract: rule + Why + How to apply
-3. Append rule body to corresponding section in `CLAUDE-personal.md` (personal) or `CLAUDE-company.md` (team)
-4. Replace memory body with stub: keep frontmatter, body becomes `Promoted to: <path>:<section> @ YYYY-MM-DD`
-5. Keep MEMORY.md index entry unchanged (reading stub → jump to actual location)
+### 升级（Memory → CLAUDE-personal.md / CLAUDE-company.md）
 
-### Retire (memory → soft delete)
+触发：用户要求检查 Memory、升级某条反馈，或把反复遗忘的规则写入 CLAUDE.md。
 
-**Trigger**: user says "feedback X is outdated" / "X contradicts reality" / "the script X references no longer exists".
+步骤：
 
-**Steps**:
-1. Verify contradiction: grep current code / check git log / confirm flow changed
-2. Append to memory body end: `Deprecated: YYYY-MM-DD — <reason>`
-3. Remove the line from MEMORY.md index via `grep -v` (file retained for git history)
+1. 阅读对应的 `~/.claude/projects/.../memory/feedback_*.md`。
+2. 提取规则、原因和应用方式。
+3. 将正文追加到 `CLAUDE-personal.md` 或 `CLAUDE-company.md` 的对应章节。
+4. 将 Memory 正文替换为 `Promoted to: <path>:<section> @ YYYY-MM-DD`。
+5. 保留 MEMORY.md 索引项。
 
-### Team-level sync (memory → lessons.md)
+### 退役（Memory 软删除）
 
-**Trigger**: user says "sync feedback X to team lessons".
+触发：用户确认规则已过时、与现状冲突或引用对象已不存在。
 
-**Execute**:
+步骤：
+
+1. 检索当前代码和 Git 历史，确认规则确实失效。
+2. 在 Memory 正文末尾追加 `Deprecated: YYYY-MM-DD — <原因>`。
+3. 从 MEMORY.md 索引删除对应行，保留文件用于历史追踪。
+
+### 团队同步（Memory → lessons.md）
+
+触发：用户要求把某条反馈同步到团队 Lessons。
+
 ```bash
-# Preview (dry-run) — requires $LESSONS_PATH or --lessons <path>
-python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push --feedback feedback_xxx --dry-run
+# 预览
+python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push \
+  --feedback feedback_xxx --dry-run
 
-# Persist
-python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push --feedback feedback_xxx --reason "..."
+# 写入
+python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push \
+  --feedback feedback_xxx --reason "..."
 ```
 
-**Push only**, no pull: memory is single-entry experience (with frontmatter), lessons is topic-aggregated markdown (multiple entries mixed per topic). Structures don't match — bidirectional sync is a false design (3 reviewers concluded).
+只允许单向推送，不反向拉取：Memory 是单条经验，Lessons 是按主题聚合的多人文档，
+两者结构不同。
 
-### What we DO NOT implement (critic/verifier agents already justified)
+### 不实现的功能
 
-- `trigger_count` auto-counting: CC has no PostSessionEnd hook for reliable persistence
-- Private frontmatter fields in memory: CC platform doesn't guarantee retention
-- Automatic upgrade judgment: must be human-decided
-- L5 → L1 reverse sync: structures don't match, no canonical source
+- 自动统计 `trigger_count`
+- 依赖平台未保证保留的私有 frontmatter 字段
+- 自动判断是否升级
+- L5 → L1 反向同步
 
-### Hook health
+### Hook 健康状态
 
-3 core hooks installed at `~/.claude/hooks/` (managed by rules-architect skill v{{SKILL_VERSION}}). Hit records at `{{CACHE_DIR}}/audit.jsonl`:
-- `memory_intake_check.py` — writing to memory → inject 5-Q SOP
-- `rule_intake_reminder.py` — user msg has rule keywords → inject 5-Q SOP
-- `cleanup_hook.py` — SessionStart maintenance (lock TTL + audit rotation)
+三个核心 Hook 位于 `~/.claude/hooks/`，命中记录写入
+`{{CACHE_DIR}}/audit.jsonl`：
 
-Opt-in workflow hooks (fork from `examples/`): `error_recovery_checkpoint.py`, `dangerous_branch_reminder.py` (checkout to {{PROTECTED_BRANCHES}}), `mr_created_reminder.py`.
+- `memory_intake_check.py`：写入 Memory 时注入五问。
+- `rule_intake_reminder.py`：用户消息包含规则关键词时注入五问。
+- `cleanup_hook.py`：会话启动时清理锁和轮转审计日志。
 
-Observation:
+可选工作流 Hook 位于 `examples/`。
+
+查看命中：
+
 ```bash
 jq -c 'select(.decision == "inject") | {hook, ts}' {{CACHE_DIR}}/audit.jsonl | tail
 ```
 
-Manifest:
+Manifest：
+
 ```bash
 cat ~/.claude/.rules-architect-manifest.json
 ```

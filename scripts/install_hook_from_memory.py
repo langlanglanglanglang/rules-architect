@@ -74,10 +74,10 @@ def _quarantine_corrupt_manifest():
     bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
     try:
         MANIFEST_PATH.rename(bad)
-        warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-             "Old install entries are NOT auto-tracked — recover them from that file.")
+        warn(f"Manifest 无法读取，已隔离为 {bad.name}；将重新创建。"
+             "旧安装条目不会自动恢复，请从隔离文件中找回。")
     except Exception:
-        warn("Manifest unreadable and could not be quarantined; starting fresh")
+        warn("Manifest 无法读取且无法隔离，将重新创建")
 
 
 def load_manifest():
@@ -97,39 +97,39 @@ def save_manifest(m):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True,
-                    help="Hook filename stem (lowercase, underscores)")
+                    help="Hook 文件名主体（小写字母和下划线）")
     ap.add_argument("--event", required=True,
                     choices=["PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart"])
     ap.add_argument("--matcher", required=True,
-                    help="Hook matcher (e.g. 'Bash', 'mcp__Github__*', '*')")
+                    help="Hook 匹配器（例如 'Bash'、'mcp__Github__*'、'*'）")
     ap.add_argument("--reminder-file", required=True,
-                    help="Path to text file containing the reminder body")
+                    help="包含提醒正文的文本文件路径")
     ap.add_argument("--description", default="",
-                    help="One-line docstring summary")
+                    help="单行说明")
     ap.add_argument("--feedback-source", default="",
-                    help="Originating memory file (e.g. feedback_xxx)")
+                    help="来源记忆文件（例如 feedback_xxx）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     # Validate inputs
     name = args.name.strip()
     if not name.replace("_", "").isalnum():
-        err(f"Invalid --name '{name}' (must be alphanumeric + underscores)")
+        err(f"--name 无效：'{name}'（只能包含字母、数字和下划线）")
         return 1
     reminder = Path(args.reminder_file).read_text().rstrip("\n")
     if not reminder.strip():
-        err("Reminder text is empty")
+        err("提醒文本为空")
         return 1
 
     if not TEMPLATE_PATH.exists():
-        err(f"Template missing: {TEMPLATE_PATH}")
+        err(f"模板不存在：{TEMPLATE_PATH}")
         return 2
 
-    print(f"\n📦 Installing hook from memory: {name}")
-    print(f"   Source:  {args.feedback_source or '(none)'}")
-    print(f"   Event:   {args.event}")
-    print(f"   Matcher: {args.matcher}")
-    print(f"   Dest:    {HOOKS_DEST / (name + '.py')}")
+    print(f"\n📦 正在从记忆安装 Hook：{name}")
+    print(f"   来源：{args.feedback_source or '（无）'}")
+    print(f"   事件：{args.event}")
+    print(f"   匹配器：{args.matcher}")
+    print(f"   目标：{HOOKS_DEST / (name + '.py')}")
     print()
 
     # Render template.
@@ -146,16 +146,16 @@ def main():
         .replace("{{EVENT}}", args.event)
         .replace("{{MATCHER}}", _docstring_safe(args.matcher))
         .replace("{{REMINDER_JSON}}", json.dumps(reminder, ensure_ascii=False))
-        .replace("{{DESCRIPTION}}", _docstring_safe(args.description or f"Generated hook {name}"))
-        .replace("{{FEEDBACK_SOURCE}}", _docstring_safe(args.feedback_source or "(manual)"))
+        .replace("{{DESCRIPTION}}", _docstring_safe(args.description or f"自动生成的 Hook {name}"))
+        .replace("{{FEEDBACK_SOURCE}}", _docstring_safe(args.feedback_source or "（手动创建）"))
         .replace("{{SKILL_VERSION}}", SKILL_VERSION))
 
     dest_path = HOOKS_DEST / f"{name}.py"
     rendered_hash = text_sha256(rendered)
 
     if dest_path.exists():
-        warn(f"{dest_path} already exists — refusing to overwrite "
-             "(delete it first or pick a different --name)")
+        warn(f"{dest_path} 已存在，已拒绝覆盖"
+             "（请先删除它或选择其他 --name）")
         return 3
 
     # Pre-flight: don't write the hook file if settings.json is present but
@@ -164,21 +164,21 @@ def main():
         try:
             _cfg = json.loads(SETTINGS_PATH.read_text())
         except Exception as e:
-            err(f"settings.json is present but not valid JSON ({e}). "
-                "Fix it first so install stays atomic.")
+            err(f"settings.json 存在但不是有效 JSON（{e}）。"
+                "请先修复，以保证安装过程的原子性。")
             return 4
         if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
-            err("settings.json has an unexpected shape (root object with an "
-                "object 'hooks' required). Fix it first.")
+            err("settings.json 结构异常（根节点必须是对象，且 'hooks' 也必须是对象）。"
+                "请先修复。")
             return 4
 
     if args.dry_run:
-        info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
+        info(f"仅预览：将写入 {dest_path}（{len(rendered)} 字节）")
         return 0
 
     atomic_write(dest_path, rendered)
     os.chmod(dest_path, 0o755)
-    ok(f"Installed {dest_path}")
+    ok(f"已安装 {dest_path}")
 
     # Merge settings.json (back it up first — parity with the other installers,
     # which never mutate settings.json without a timestamped snapshot)
@@ -187,7 +187,7 @@ def main():
         ts = time.strftime("%Y%m%d-%H%M%S")
         settings_backup = SETTINGS_PATH.with_suffix(f".json.bak.{ts}")
         shutil.copy2(SETTINGS_PATH, settings_backup)
-        ok(f"Backed up settings.json → {settings_backup.name}")
+        ok(f"已备份 settings.json → {settings_backup.name}")
         settings = json.loads(SETTINGS_PATH.read_text())
     else:
         settings = {}
@@ -198,7 +198,7 @@ def main():
                    "command": f"python3 ~/.claude/hooks/{name}.py"}],
     })
     atomic_write(SETTINGS_PATH, json.dumps(settings, indent=2, ensure_ascii=False))
-    ok(f"Registered in settings.json: {args.event} / {args.matcher}")
+    ok(f"已注册到 settings.json：{args.event} / {args.matcher}")
 
     # Manifest
     m = load_manifest()
@@ -221,7 +221,7 @@ def main():
     if settings_backup is not None:
         m["settings_backup_path"] = str(settings_backup)
     save_manifest(m)
-    ok(f"Manifest updated")
+    ok("Manifest 已更新")
 
     # Smoke test (uses unique session id to avoid colliding with user dedupe locks)
     smoke_session_id = f"install-smoke-{int(time.time())}"
@@ -232,11 +232,11 @@ def main():
             capture_output=True, text=True, timeout=5
         )
         if out.returncode == 0:
-            ok(f"Smoke test passed")
+            ok("冒烟测试通过")
         else:
-            warn(f"Smoke test exit={out.returncode}: {out.stderr[:200]}")
+            warn(f"冒烟测试退出码={out.returncode}：{out.stderr[:200]}")
     except Exception as e:
-        warn(f"Smoke test skipped: {e}")
+        warn(f"已跳过冒烟测试：{e}")
     # Clean up the dedupe lock we just created so the hook fires fresh on
     # the user's first real session.
     for cache_root in [
@@ -251,8 +251,8 @@ def main():
             except Exception: pass
 
     print()
-    print(f"✨ Hook '{name}' installed and registered.")
-    print(f"   Run /reload-plugins or start a new CC session for it to take effect.")
+    print(f"✨ Hook '{name}' 已安装并注册。")
+    print("   请运行 /reload-plugins 或启动新的 Claude Code 会话使其生效。")
     return 0
 
 

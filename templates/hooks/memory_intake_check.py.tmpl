@@ -20,7 +20,7 @@ Dedupe: per-session lock (~/.cache/claude-hooks/memory-intake-<sid>.lock,
         auto-cleaned at SessionStart by cleanup_hook.py)
 Audit:  ~/.cache/claude-hooks/audit.jsonl
 
-Installed by rules-architect skill v{{SKILL_VERSION}}
+由 rules-architect Skill v{{SKILL_VERSION}} 安装
 """
 import json
 import os
@@ -109,23 +109,22 @@ def is_memory_path(p: str) -> bool:
 
 
 # Self-contained reminder — full 5-Q SOP embedded, no external references.
-REMINDER = """**About to write to a CC memory file**. Before saving, walk the 5-Question Placement SOP:
+REMINDER = """**即将写入记忆文件**。保存前必须完成五问归位 SOP：
 
-| # | Question | Pick layer |
+| # | 问题 | 选择层级 |
 |---|---|---|
-| 1 | Can trigger condition be expressed by tool/matcher? | **L0 hook** / **L2 path-scoped** |
-| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
-| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md / **L5** lessons |
-| 4 | Personal collaboration preference only? | Current path OK (**L1 memory**) |
-| 5 | Overlaps with existing rule? grep keywords → yes → edit existing |  |
+| 1 | 触发条件能用 tool/matcher 精确表达吗？ | **L0 Hook** / **L2 路径规则** |
+| 2 | 只在编辑特定文件或目录时相关吗？ | **L2** `.claude/rules/` |
+| 3 | 全团队都需要吗（包括 Codex/Gemini 用户）？ | **L3** CLAUDE.md / **L5** Lessons |
+| 4 | 只是个人协作偏好吗？ | 当前路径可用（**L1 Memory**） |
+| 5 | 与已有规则重叠吗？先检索关键词；重叠则修改已有规则 |  |
 
-**FORBIDDEN**: skipping the 5 questions and defaulting to L1 memory. This is the #1 leakage.
+**禁止**：跳过五问，直接把新规则放进 L1 Memory。这是规则泄漏的主要来源。
 
-If you have walked the 5 questions and confirmed L1: output user-visible text first stating
-"5-Q walked, going L1 memory because: ..." then proceed.
+如果完成五问后仍确认应放入 L1，请先向用户说明：
+“已完成五问，选择 L1 Memory，因为：……”然后再继续。
 
-This reminder fires once per session via dedupe lock.
-Installed by rules-architect skill."""
+本提醒每个会话只触发一次，由 rules-architect Skill 安装。"""
 
 
 def main() -> int:

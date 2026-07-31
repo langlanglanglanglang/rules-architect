@@ -102,9 +102,9 @@ def build_block(feedback_name: str, body: str, reason: str) -> str:
     end = f"<!-- ra-memory:{feedback_name} END -->"
     today = time.strftime("%Y-%m-%d")
     lines = [begin, f"### {feedback_name}",
-             f"_Synced from L1 memory @ {today}_"]
+             f"_从 L1 个人记忆同步于 {today}_"]
     if reason:
-        lines.append(f"_Reason: {reason}_")
+        lines.append(f"_同步原因：{reason}_")
     lines += ["", body.strip(), "", end]
     return "\n".join(lines) + "\n"
 
@@ -118,70 +118,70 @@ def block_pattern(feedback_name: str):
 def cmd_push(args) -> int:
     lessons = resolve_lessons(args.lessons)
     if lessons is None:
-        err("No lessons file: pass --lessons <path> or set $LESSONS_PATH")
+        err("未指定团队经验文件：请传入 --lessons <路径> 或设置 $LESSONS_PATH")
         return 2
 
     mem = find_memory_file(args.feedback, args.memory_dir)
     if mem is None:
-        err(f"Memory file not found: {args.feedback}")
+        err(f"未找到记忆文件：{args.feedback}")
         for d in find_memory_dirs():
-            info(f"  searched: {d}")
+            info(f"  已搜索：{d}")
         return 1
 
     _, body = split_frontmatter(mem.read_text())
     if not body.strip():
-        err(f"{mem}: empty body, nothing to push")
+        err(f"{mem}：正文为空，没有可同步的内容")
         return 1
 
     block = build_block(args.feedback, body, args.reason)
     existing = lessons.read_text() if lessons.exists() else ""
     already = block_pattern(args.feedback).search(existing)
 
-    print(f"\n📤 memory_sync push")
-    print(f"   From:    {mem}")
-    print(f"   To:      {lessons}")
-    print(f"   Entry:   {args.feedback}")
-    print(f"   Present: {'yes' if already else 'no'}")
+    print(f"\n📤 memory_sync 同步")
+    print(f"   来源：{mem}")
+    print(f"   目标：{lessons}")
+    print(f"   条目：{args.feedback}")
+    print(f"   已存在：{'是' if already else '否'}")
     print()
 
     if already and not args.update:
-        ok(f"{args.feedback} already in lessons — skip (use --update to refresh)")
+        ok(f"{args.feedback} 已存在于团队经验中，已跳过（使用 --update 刷新）")
         return 0
 
     if already:
         new_text = block_pattern(args.feedback).sub(block, existing, count=1)
-        action = "updated"
+        action = "更新"
     else:
         sep = "" if existing.endswith("\n") or not existing else "\n"
         new_text = existing + sep + ("\n" if existing else "") + block
-        action = "appended"
+        action = "追加"
 
     if args.dry_run:
-        info(f"DRY-RUN: would {action} block for {args.feedback} in {lessons}")
+        info(f"仅预览：将在 {lessons} 中{action} {args.feedback} 区块")
         for ln in block.splitlines():
             info(f"   | {ln}")
         return 0
 
     atomic_write(lessons, new_text)
-    ok(f"{action} {args.feedback} → {lessons}")
-    info("   One-way push only: lessons.md is never read back into memory.")
+    ok(f"已{action} {args.feedback} → {lessons}")
+    info("   仅单向同步：不会把 lessons.md 反向写回个人记忆。")
     return 0
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Push L1 memory entries to team lessons.md")
+    ap = argparse.ArgumentParser(description="将 L1 个人记忆同步到团队 lessons.md")
     sub = ap.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("push", help="Push one memory entry to lessons.md")
+    p = sub.add_parser("push", help="将一条个人记忆同步到 lessons.md")
     p.add_argument("--feedback", required=True,
-                   help="Memory entry name (e.g. feedback_no_mid_task_pause)")
+                   help="记忆条目名称（例如 feedback_no_mid_task_pause）")
     p.add_argument("--reason", default="",
-                   help="Why this is worth sharing team-wide")
+                   help="值得向团队共享的原因")
     p.add_argument("--lessons", default="",
-                   help="Target lessons.md (else $LESSONS_PATH)")
+                   help="目标 lessons.md（未传入时读取 $LESSONS_PATH）")
     p.add_argument("--memory-dir", default="",
-                   help="Override memory directory to search")
+                   help="指定要搜索的记忆目录")
     p.add_argument("--update", action="store_true",
-                   help="Refresh the entry's block if already present")
+                   help="条目已存在时刷新对应区块")
     p.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 

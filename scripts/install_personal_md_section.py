@@ -74,17 +74,17 @@ def load_manifest(dry_run: bool = False) -> dict:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
             if dry_run:
-                warn("Manifest unreadable (DRY-RUN: would quarantine to "
-                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+                warn("Manifest 无法读取（仅预览：原本会隔离为 .corrupt.<时间戳>）；"
+                     "将使用新的内存 Manifest，不修改任何文件")
             else:
                 ts = time.strftime("%Y%m%d-%H%M%S")
                 bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
                 try:
                     MANIFEST_PATH.rename(bad)
-                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                         "Old install entries are NOT auto-tracked — recover from that file.")
+                    warn(f"Manifest 无法读取，已隔离为 {bad.name}；将重新创建。"
+                         "旧安装条目不会自动恢复，请从隔离文件中找回。")
                 except Exception:
-                    warn("Manifest unreadable and could not be quarantined; starting fresh")
+                    warn("Manifest 无法读取且无法隔离，将重新创建")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -177,27 +177,27 @@ def replace_or_append(text: str, new_section: str) -> tuple:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default="CLAUDE-personal.md",
-                    help="Target file path (default: ./CLAUDE-personal.md)")
+                    help="目标文件路径（默认：./CLAUDE-personal.md）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--create-if-missing", action="store_true",
-                    help="Create a fresh CLAUDE-personal.md if target doesn't exist")
+                    help="目标不存在时新建 CLAUDE-personal.md")
     ap.add_argument("--force", action="store_true",
-                    help="Overwrite the §六 block even if it was edited since install")
+                    help="即使 §六区块在安装后被编辑过也覆盖")
     ap.add_argument("--protected-branches", default="develop|test|master",
-                    help="For §六 'Hook health' subsection reference")
+                    help="供 §六“Hook 健康检查”小节引用")
     ap.add_argument("--cache-dir",
                     default=str(Path.home() / ".cache" / "claude-hooks"),
-                    help="Cache dir referenced in §六")
+                    help="§六引用的缓存目录")
     args = ap.parse_args()
 
     target = Path(args.target).resolve()
     if not TEMPLATE_PATH.exists():
-        err(f"Template missing: {TEMPLATE_PATH}")
+        err(f"模板不存在：{TEMPLATE_PATH}")
         return 2
 
-    print(f"\n📦 personal-section-6 installer v{SKILL_VERSION}")
-    print(f"   Target: {target}")
-    print(f"   Template: {TEMPLATE_PATH}")
+    print(f"\n📦 personal-section-6 安装器 v{SKILL_VERSION}")
+    print(f"   目标：{target}")
+    print(f"   模板：{TEMPLATE_PATH}")
     print()
 
     rendered = render_section(args.cache_dir, args.protected_branches)
@@ -205,20 +205,20 @@ def main() -> int:
 
     if not target.exists():
         if not args.create_if_missing:
-            err(f"Target {target} does not exist. "
-                "Use --create-if-missing to create.")
+            err(f"目标 {target} 不存在。"
+                "请使用 --create-if-missing 创建。")
             return 1
-        info(f"Creating new {target}")
+        info(f"正在新建 {target}")
         body = (
-            "# Personal CLAUDE\n\n"
-            "Personal preferences and workflow tweaks for this project.\n\n"
+            "# 个人 CLAUDE 配置\n\n"
+            "本项目的个人偏好与工作流调整。\n\n"
             + rendered
         )
         if args.dry_run:
-            info(f"DRY-RUN: would create {target}")
+            info(f"仅预览：将创建 {target}")
             return 0
         atomic_write(target, body)
-        ok(f"Created {target}")
+        ok(f"已创建 {target}")
         action = "created"
     else:
         existing = target.read_text()
@@ -235,27 +235,36 @@ def main() -> int:
                     # instead of refusing, so uninstall can remove it later.
                     if not args.dry_run:
                         record_section(target, rendered_hash, "adopted")
-                    ok(f"§六 present in {target.name} & matches template — adopted "
-                       "into manifest")
+                    ok(f"{target.name} 中的 §六与模板一致，已纳入 Manifest")
                     return 0
                 # Markers exist, no record, and block differs from template:
                 # can't prove it's safe, so don't overwrite blindly.
-                warn(f"§六 markers present in {target.name} but no manifest record "
-                     "and block differs from template — refusing. Use --force.")
+                warn(f"{target.name} 中存在 §六标记，但 Manifest 无记录且内容与模板"
+                     "不同，已拒绝覆盖。请使用 --force。")
                 return 1
             if cur is not None and rec is not None and text_sha256(cur) != rec:
-                warn(f"§六 block in {target.name} was modified since install "
-                     "(hash mismatch) — refusing to overwrite. Use --force to replace.")
+                warn(f"{target.name} 中的 §六区块在安装后已被修改"
+                     "（哈希不一致），已拒绝覆盖。请使用 --force 替换。")
                 return 1
         new_text, action = replace_or_append(existing, rendered)
         if new_text == existing:
-            ok("Already up to date — nothing to do")
+            ok("已是最新状态，无需操作")
             return 0
         if args.dry_run:
-            info(f"DRY-RUN: would {action} ({len(rendered)} bytes inserted)")
+            action_zh = {
+                "replaced": "替换",
+                "inserted_before_维护": "插入到“维护”小节之前",
+                "appended": "追加",
+            }.get(action, action)
+            info(f"仅预览：将{action_zh}（插入 {len(rendered)} 字节）")
             return 0
         atomic_write(target, new_text)
-        ok(f"§六 {action} in {target}")
+        action_zh = {
+            "replaced": "已替换",
+            "inserted_before_维护": "已插入到“维护”小节之前",
+            "appended": "已追加",
+        }.get(action, action)
+        ok(f"{target} 中的 §六{action_zh}")
 
     # Manifest
     manifest = load_manifest()
@@ -276,7 +285,7 @@ def main() -> int:
     })
     manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     save_manifest(manifest)
-    ok(f"Manifest updated → {MANIFEST_PATH}")
+    ok(f"Manifest 已更新 → {MANIFEST_PATH}")
     return 0
 
 

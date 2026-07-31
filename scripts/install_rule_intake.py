@@ -88,10 +88,10 @@ def load_manifest() -> dict:
             bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
             try:
                 MANIFEST_PATH.rename(bad)
-                warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                     "Old install entries are NOT auto-tracked — recover from that file.")
+                warn(f"Manifest 无法读取，已隔离为 {bad.name}；将重新创建。"
+                     "旧安装条目不会自动恢复，请从隔离文件中找回。")
             except Exception:
-                warn("Manifest unreadable and could not be quarantined; starting fresh")
+                warn("Manifest 无法读取且无法隔离，将重新创建")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -112,12 +112,12 @@ def render_paths_block(paths: list) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=str(Path.cwd()),
-                    help="Project root (default cwd)")
+                    help="项目根目录（默认为当前目录）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--paths",
-                    help="Comma-separated globs to override default paths list")
+                    help="以逗号分隔的 glob，用于覆盖默认路径列表")
     ap.add_argument("--force", action="store_true",
-                    help="Overwrite if differs from template")
+                    help="内容与模板不同时覆盖")
     args = ap.parse_args()
 
     project_root = Path(args.dir).resolve()
@@ -125,7 +125,7 @@ def main() -> int:
     dest_path = rules_dir / "rule-intake.md"
 
     if not TEMPLATE_PATH.exists():
-        err(f"Template missing: {TEMPLATE_PATH}")
+        err(f"模板不存在：{TEMPLATE_PATH}")
         return 2
 
     paths_list = (
@@ -133,10 +133,10 @@ def main() -> int:
         if args.paths else DEFAULT_PATHS
     )
 
-    print(f"\n📦 rule-intake.md installer v{SKILL_VERSION}")
-    print(f"   Project: {project_root}")
-    print(f"   Dest:    {dest_path}")
-    print(f"   Paths:   {len(paths_list)} globs ({'custom' if args.paths else 'default'})")
+    print(f"\n📦 rule-intake.md 安装器 v{SKILL_VERSION}")
+    print(f"   项目：{project_root}")
+    print(f"   目标：{dest_path}")
+    print(f"   路径：{len(paths_list)} 个 glob（{'自定义' if args.paths else '默认'}）")
     print()
 
     template = TEMPLATE_PATH.read_text()
@@ -149,7 +149,7 @@ def main() -> int:
     if dest_path.exists():
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
-            ok("Already installed with identical content")
+            ok("已安装且内容一致")
             # Adopt into the manifest if untracked (e.g. manifest lost/reset),
             # so uninstall can still remove this file later.
             if not args.dry_run:
@@ -167,20 +167,20 @@ def main() -> int:
                     })
                     manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                     save_manifest(manifest)
-                    ok("Adopted into manifest (was untracked)")
+                    ok("已纳入 Manifest（原先未跟踪）")
             return 0
         if not args.force:
-            warn(f"{dest_path} exists with different content. "
-                 "Use --force to overwrite, or edit --paths to match.")
+            warn(f"{dest_path} 已存在且内容不同。"
+                 "请使用 --force 覆盖，或调整 --paths 使其匹配。")
             return 1
 
     if args.dry_run:
-        info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
-        info(f"DRY-RUN: paths block:\n{render_paths_block(paths_list)}")
+        info(f"仅预览：将写入 {dest_path}（{len(rendered)} 字节）")
+        info(f"仅预览：路径区块：\n{render_paths_block(paths_list)}")
         return 0
 
     atomic_write(dest_path, rendered)
-    ok(f"Installed {dest_path}")
+    ok(f"已安装 {dest_path}")
 
     # Update manifest
     manifest = load_manifest()
@@ -199,11 +199,11 @@ def main() -> int:
     })
     manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     save_manifest(manifest)
-    ok(f"Manifest updated → {MANIFEST_PATH}")
+    ok(f"Manifest 已更新 → {MANIFEST_PATH}")
 
     print()
-    print("✨ Done. Edit any rule file (e.g. MEMORY.md, .claude/rules/*.md) "
-          "to see the SOP injected.")
+    print("✨ 完成。编辑任意规则文件（例如 MEMORY.md、.claude/rules/*.md），"
+          "即可看到自动注入的归位流程。")
     return 0
 
 

@@ -91,6 +91,20 @@ for h in "${expected_hooks[@]}"; do
 done
 echo
 
+# Core Hook reminders must remain Chinese. Machine identifiers such as event
+# names stay unchanged, but user-facing context must not regress to English.
+memory_context=$(printf '%s' \
+  '{"session_id":"zh-memory","tool_name":"Write","tool_input":{"file_path":"/tmp/memory/MEMORY.md"}}' \
+  | python3 "$HOME/.claude/hooks/memory_intake_check.py")
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); c=d['hookSpecificOutput']['additionalContext']; assert '五问归位' in c; assert '写入记忆文件' in c" "$memory_context"
+
+rule_context=$(printf '%s' \
+  '{"session_id":"zh-rule","prompt":"以后所有任务都必须先运行测试"}' \
+  | python3 "$HOME/.claude/hooks/rule_intake_reminder.py")
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); c=d['hookSpecificOutput']['additionalContext']; assert '规则引入关键词' in c; assert '五问归位' in c" "$rule_context"
+echo "  ✅ 核心 Hook 注入内容为中文"
+echo
+
 # === Step 4: Verify settings.json contains expected entries ===
 echo ">>> Step 4: verify settings.json"
 python3 -c "

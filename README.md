@@ -9,8 +9,8 @@
 > Claude Code **及 Codex CLI** 的自我改进规则架构。安装 3 个核心 hook + 1 个 path-scoped rule，让规则归位变可靠，不再依赖 CLAUDE.md 的注意力。（Codex 一等公民支持见 [codex 支持](#codex-支持一等公民) 节。）
 
 默认运行还会生成一份**只读规则分布建议**：按 Claude/Codex 的加载规则扫描当前项目候选来源中的
-memory、CLAUDE、AGENTS、path rules 和已注册 hooks，按 Hooks / Rules /
-Team Baseline / Memory / Lessons 五组展示。报告不会自动迁移或覆盖规则。
+memory、CLAUDE、AGENTS、路径规则和已注册 Hook，按 Hook 强制规则 / 路径规则 /
+团队基线 / 个人记忆 / 团队经验五组展示。报告不会自动迁移或覆盖规则。
 
 ## 安装包含什么
 
@@ -127,36 +127,36 @@ $rules-architect
 ### 只读规则分布报告
 
 在 Claude Code 运行 `/rules-architect`，或在 Codex 运行
-`$rules-architect`（也可从 `/skills` 选择）时，主 agent 默认：
+`$rules-architect`（也可从 `/skills` 选择）时，主代理默认：
 
 1. 用 `scripts/rule_inventory.py` 建立当前项目候选清单
 2. 对每条候选选择唯一正文、加载适配器和 enforcement 模式
 3. 用 `recommendation_contract.py` 校验没有漏项或旧报告
 4. 用 `render_distribution.py` 输出五组建议
 
-对用户来说入口仍然只有一次 Skill 调用。语义分类由当前会话的主 agent
+对用户来说入口仍然只有一次 Skill 调用。语义分类由当前会话的主代理
 完成；Python 工具只负责确定性扫描、校验和渲染，不声称能够脱离模型独立
 理解规则。
 
-Hook 会明确标注 `block` 或 `remind`。
+Hook 会明确标注“阻断”（`block`）或“提醒”（`remind`）。
 只有动作发生前能够确定性验证并阻断的 Hook 才会标成强制；现有
 `additionalContext` Hook 属于提醒。
 
 输出形态示例：
 
 ```text
-Hooks（2）
-H01 [R-main-push][高][create] 禁止直接 push main
-执行：claude / block / PreToolUse / Bash
+Hook 强制规则（2）
+H01 [R-main-push][高][创建] 禁止直接 push main
+执行：claude / 阻断 / PreToolUse / Bash
 
-Path-scoped Rules（1）
-P01 [R-proto-field][高][keep] Proto 字段编号必须递增
+路径规则（1）
+P01 [R-proto-field][高][保留] Proto 字段编号必须递增
 
-Team Baseline（3）
+团队基线（3）
 ...
-Memory（1）
+个人记忆（1）
 ...
-Lessons（1）
+团队经验（1）
 ...
 ```
 

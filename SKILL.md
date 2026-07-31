@@ -1,6 +1,6 @@
 ---
 name: rules-architect
-description: Self-improving Claude Code rule architecture - 5-layer memory model (L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 team lessons) + 5-question placement SOP + 3 core hooks + path-scoped rule-intake + team sync. Use when user asks "how to manage rules" / "rules keep getting forgotten" / "claude.md optimization" / "memory optimization" / "rules architect" / wants rule placement automation. L3 audit delegated to claude-md-management:claude-md-improver.
+description: Claude Code 自我改进规则架构——五层记忆模型（L0 Hook / L1 个人记忆 / L2 路径规则 / L3 CLAUDE.md / L5 团队经验）+ 五问归位流程 + 3 个核心 Hook + 路径规则入口 + 团队同步。用于用户要求管理规则、解决规则容易遗忘、优化 CLAUDE.md 或 memory、整理规则分布、自动判断规则归位时。L3 审计委托给 claude-md-management:claude-md-improver。
 triggers:
   - rules architect
   - 自我改进规则
@@ -12,7 +12,7 @@ triggers:
   - memory optimization
 ---
 
-# Rules Architect Skill
+# Rules Architect 规则架构 Skill
 
 > **中文** | [English](SKILL.en.md)
 
@@ -59,7 +59,11 @@ Claude Code 默认行为：所有细节都被甩到 L1 memory（因为 memory �
 `$rules-architect`（或从 `/skills` 选择），或要求“整理规则”“显示规则分布建议”时，
 默认生成**只读报告**，不先进入安装模式，也不修改任何规则文件。
 
-### Step R1：建立平台感知的候选清单
+**语言要求**：所有面向用户的对话、阶段更新、问题、建议摘要、归位原因和最终报告
+必须使用中文。命令、文件名、事件名、匹配器、JSON 字段、规则 ID 等机器标识保持
+原样；不得因为内部契约和脚本使用英文标识，就把说明文本切换为英文。
+
+### 步骤 R1：建立平台感知的候选清单
 
 使用权限受限的临时目录，不要使用固定 `/tmp/ra-*.json` 文件名：
 
@@ -73,7 +77,7 @@ python3 "$ra_skill_dir/scripts/rule_inventory.py" \
   --output "$ra_workdir/inventory.json"
 ```
 
-主 agent 必须把 `ra_skill_dir` 替换为本次已加载 skill 的真实目录；不得把它
+主代理必须把 `ra_skill_dir` 替换为本次已加载 Skill 的真实目录；不得把它
 解析成用户项目下的 `scripts/`，也不得要求用户手工寻找。执行前确认
 `$ra_skill_dir/scripts/rule_inventory.py` 存在。
 
@@ -88,9 +92,9 @@ scope、source hash 和 extraction confidence。
 `memory_not_found`，不得选择“最近修改的其他项目 memory”。用户可以显式提供
 `--memory-dir`。
 
-### Step R2：主 agent 做语义分类
+### 步骤 R2：主代理做语义分类
 
-主 agent 必须覆盖 inventory 中每个 `occurrence_id`，生成符合
+主代理必须覆盖 inventory 中每个 `occurrence_id`，生成符合
 `recommendation_contract.py` 的紧凑 JSON。可先查看合法结构：
 
 ```bash
@@ -116,7 +120,7 @@ Hook enforcement 首版只允许两种模式：
 正文与适配器分离。一条团队规则可以以 `AGENTS.md` 为 canonical，同时派生
 Claude/Codex Hook；不得因为推荐 Hook 就删除唯一正文。
 
-### Step R3：校验完整性
+### 步骤 R3：校验完整性
 
 ```bash
 python3 "$ra_skill_dir/scripts/recommendation_contract.py" \
@@ -132,7 +136,7 @@ python3 "$ra_skill_dir/scripts/recommendation_contract.py" \
 - Hook 组没有 enforcement
 - Path Rules 组没有 path delivery
 
-### Step R4：渲染五组报告
+### 步骤 R4：渲染五组报告
 
 ```bash
 python3 "$ra_skill_dir/scripts/render_distribution.py" \
@@ -140,21 +144,21 @@ python3 "$ra_skill_dir/scripts/render_distribution.py" \
   --inventory "$ra_workdir/inventory.json"
 ```
 
-固定输出：Hooks / Path-scoped Rules / Team Baseline / Memory / Lessons，
+固定输出：Hook 强制规则 / 路径规则 / 团队基线 / 个人记忆 / 团队经验，
 然后输出重复、冲突、待确认和扫描问题。报告中的五组是展示分组，不是简单的
 覆盖优先级。
 
 报告交付后删除临时目录。除非用户随后明确要求安装或应用建议，否则到此停止。
 
-## 安装与迁移流程（由当前平台的主 agent 编排）
+## 安装与迁移流程（由当前平台的主代理编排）
 
 本 skill 在 Claude Code 通过 `/rules-architect`、在 Codex 通过
-`$rules-architect` 触发。当前会话的**主 agent**负责编排这 5 步——**不是**
-一个 Python 脚本一把梭。memory 升级需要语义判断，只有主 agent 能给。
+`$rules-architect` 触发。当前会话的**主代理**负责编排这 5 步——**不是**
+一个 Python 脚本一把梭。记忆升级需要语义判断，只有主代理能完成。
 若用户直接指定安装模式，也必须先按默认流程中的规则解析绝对
 `ra_skill_dir`。
 
-### Step 1：诊断（不改文件）
+### 步骤 1：诊断（不改文件）
 
 ```bash
 umask 077
@@ -164,11 +168,11 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/before.jso
 
 把结构化报告展示给用户，包括 **memory 升级候选表**——每条候选附 `recommended_target` + `reason`。
 
-### Step 2：展示 5 层模型 + 5 问 SOP
+### 步骤 2：展示五层模型 + 五问归位流程
 
 展示架构与 SOP。简要说明"把一条 memory 升 L0 hook 意味着什么"（持续拦截 vs L1 单纯建议）。
 
-### Step 3：模式选择
+### 步骤 3：模式选择
 
 | 模式 | 内容 |
 |---|---|
@@ -178,7 +182,7 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/before.jso
 | **A**. 全量安装 | B + rule-intake + §六 + 交互式 memory 升级 |
 | **E**. 卸载 | 按 manifest 精准回滚 |
 
-### Step 4：执行
+### 步骤 4：执行
 
 #### 4a. 装 3 个核心 hook（模式 B / A）
 
@@ -190,12 +194,12 @@ python3 "$ra_skill_dir/scripts/install_hooks.py" --non-interactive
 
 #### 4b. memory 升级循环（模式 A；模式 B 可选）
 
-从 Step 1 读 `upgrade_candidates`。**对每条候选**：
+从步骤 1 读取 `upgrade_candidates`。**对每条候选**：
 
 1. 问用户：*「升级 `<feedback_name>`？（建议目标：`<target>`，原因：`<reason>`）[y/N]」*
 2. 若 yes：
    - **读** memory 全文
-   - **提炼**简洁 reminder 文本（你——主 agent——做语义蒸馏：把动作/约束提取成拦截时注入的文本；< 500 字符，自包含，不引用外部文档）
+   - **提炼**简洁提醒文本（你——主代理——做语义蒸馏：把动作/约束提取成拦截时注入的中文文本；< 500 字符，自包含，不引用外部文档）
    - **决定** hook 事件 + matcher：
      - 节奏关键词 + 无特定工具 → 通常 `UserPromptSubmit` + `*`
      - 绑定特定工具（commit / MR 等） → 该工具的 PostToolUse
@@ -230,7 +234,7 @@ python3 "$ra_skill_dir/scripts/install_rule_intake.py"
 python3 "$ra_skill_dir/scripts/install_personal_md_section.py" --create-if-missing
 ```
 
-### Step 5：再诊断 + 前后对比
+### 步骤 5：再诊断 + 前后对比
 
 ```bash
 python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json"
@@ -248,13 +252,13 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 
 ---
 
-### 主 agent 红线
+### 主代理红线
 
-- **永远先跑 Step 1**，任何改动前
+- **永远先跑步骤 1**，任何改动前
 - **绝不**未经每条候选的明确用户同意就自动升级
 - **reminder 精简**：< 500 字符、自包含、不引用外部章节
 - **matcher 不确定**时：先给用户看草稿 + 问确认再装
-- **Step 5 必须给前后对比**，让用户看到 impact
+- **步骤 5 必须给前后对比**，让用户看到实际影响
 
 ## 本 skill 提供什么
 

@@ -18,7 +18,7 @@ Tightened patterns:
 Dedupe: per-session lock
 Audit:  ~/.cache/claude-hooks/audit.jsonl
 
-Installed by rules-architect skill v{{SKILL_VERSION}}
+由 rules-architect Skill v{{SKILL_VERSION}} 安装
 """
 import json
 import os
@@ -96,24 +96,24 @@ def log_audit(hook: str, decision: str, **kwargs) -> None:
 
 
 # Self-contained 5-Q SOP — no external references.
-REMINDER_TEMPLATE = """**User message contains rule-introduction keyword** (matched: `{match}`).
+REMINDER_TEMPLATE = """**用户消息包含规则引入关键词**（匹配：`{match}`）。
 
-Before persisting any new rule, walk the **5-Question Placement SOP**:
+保存任何新规则前，必须完成**五问归位 SOP**：
 
-| # | Question | Pick layer |
+| # | 问题 | 选择层级 |
 |---|---|---|
-| 1 | Can trigger condition be expressed by tool/matcher? | **L0 hook** / **L2 path-scoped** |
-| 2 | Only relevant when editing specific files/dirs? | **L2** `.claude/rules/` |
-| 3 | All team members need it (incl. codex/gemini users)? | **L3** CLAUDE.md / **L5** lessons |
-| 4 | Personal collaboration preference only? | **L1** memory |
-| 5 | Overlaps with existing rule? grep → yes → edit existing |  |
+| 1 | 触发条件能用 tool/matcher 精确表达吗？ | **L0 Hook** / **L2 路径规则** |
+| 2 | 只在编辑特定文件或目录时相关吗？ | **L2** `.claude/rules/` |
+| 3 | 全团队都需要吗（包括 Codex/Gemini 用户）？ | **L3** CLAUDE.md / **L5** Lessons |
+| 4 | 只是个人协作偏好吗？ | **L1 Memory** |
+| 5 | 与已有规则重叠吗？先检索；重叠则修改已有规则 |  |
 
-**Anti-pattern**: defaulting all new rules to L1 memory (most easily forgotten + team can't see).
+**反模式**：所有新规则都默认放进 L1 Memory，既容易遗忘，团队也看不到。
 
-Before acting, output user-visible text stating the layer choice + reasoning:
-> "This rule goes to LX because: ..."
+执行前先向用户说明选择的层级和原因：
+> “这条规则应放在 LX，因为：……”
 
-Fires once per session via dedupe lock. Installed by rules-architect skill."""
+本提醒每个会话只触发一次，由 rules-architect Skill 安装。"""
 
 
 def main() -> int:

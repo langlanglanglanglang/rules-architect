@@ -99,7 +99,7 @@ def parse_version(s: str) -> tuple:
 
 def check_cc_version(skip: bool) -> bool:
     if skip:
-        warn("Skipping CC version check (--skip-version-check)")
+        warn("已跳过 Claude Code 版本检查（--skip-version-check）")
         return True
     try:
         out = subprocess.run(
@@ -107,24 +107,24 @@ def check_cc_version(skip: bool) -> bool:
             capture_output=True, text=True, timeout=5
         )
         if out.returncode != 0:
-            err(f"`claude --version` failed: {out.stderr}")
+            err(f"`claude --version` 执行失败：{out.stderr}")
             return False
         version_str = out.stdout.strip()
         current = parse_version(version_str)
         required = parse_version(MIN_CC_VERSION)
         if current < required:
             err(
-                f"Claude Code version {version_str} < required {MIN_CC_VERSION} "
-                "(UserPromptSubmit hook is required)"
+                f"Claude Code 版本 {version_str} 低于最低要求 {MIN_CC_VERSION}"
+                "（需要 UserPromptSubmit Hook）"
             )
             return False
-        ok(f"CC version {version_str} >= {MIN_CC_VERSION}")
+        ok(f"Claude Code 版本 {version_str}，满足最低要求 {MIN_CC_VERSION}")
         return True
     except FileNotFoundError:
-        err("`claude` CLI not found in PATH. Install Claude Code first.")
+        err("PATH 中找不到 `claude`，请先安装 Claude Code。")
         return False
     except Exception as e:
-        err(f"CC version check failed: {e}")
+        err(f"Claude Code 版本检查失败：{e}")
         return False
 
 
@@ -176,17 +176,16 @@ def load_manifest(dry_run: bool = False) -> dict:
             return json.loads(MANIFEST_PATH.read_text())
         except Exception:
             if dry_run:
-                warn("Manifest unreadable (DRY-RUN: would quarantine to "
-                     ".corrupt.<ts>); using a fresh in-memory manifest, no files touched")
+                warn("Manifest 无法读取；预览模式将使用空 Manifest，不改文件")
             else:
                 ts = time.strftime("%Y%m%d-%H%M%S")
                 bad = MANIFEST_PATH.with_suffix(f".json.corrupt.{ts}")
                 try:
                     MANIFEST_PATH.rename(bad)
-                    warn(f"Manifest unreadable → quarantined to {bad.name}; starting fresh. "
-                         "Old install entries are NOT auto-tracked — recover from that file.")
+                    warn(f"Manifest 无法读取，已隔离为 {bad.name}；将使用新 Manifest。"
+                         "旧安装记录不会自动恢复，请从隔离文件找回。")
                 except Exception:
-                    warn("Manifest unreadable and could not be quarantined; starting fresh")
+                    warn("Manifest 无法读取且隔离失败；将使用新 Manifest")
     return {
         "skill_name": "rules-architect",
         "skill_version": SKILL_VERSION,
@@ -204,15 +203,15 @@ def save_manifest(m: dict) -> None:
 # === Settings.json backup ===
 def backup_settings(dry_run: bool) -> Optional[str]:
     if not SETTINGS_PATH.exists():
-        info("settings.json does not exist yet — will create new")
+        info("settings.json 尚不存在，将创建新文件")
         return None
     ts = time.strftime("%Y%m%d-%H%M%S")
     bak = SETTINGS_PATH.with_suffix(f".json.bak.{ts}")
     if dry_run:
-        info(f"DRY-RUN: would back up {SETTINGS_PATH} → {bak}")
+        info(f"预览：将备份 {SETTINGS_PATH} → {bak}")
         return str(bak)
     shutil.copy2(SETTINGS_PATH, bak)
-    ok(f"Backed up {SETTINGS_PATH.name} → {bak.name}")
+    ok(f"已备份 {SETTINGS_PATH.name} → {bak.name}")
     return str(bak)
 
 
@@ -229,7 +228,7 @@ def install_hook_file(
     # same-named file was left untouched → must NOT register it), or "abort".
     template_path = TEMPLATES_DIR / (template_name + ".tmpl")
     if not template_path.exists():
-        err(f"Template missing: {template_path}")
+        err(f"模板不存在：{template_path}")
         return "abort"
     raw = template_path.read_text()
     rendered = substitute(raw, vars_)
@@ -240,7 +239,7 @@ def install_hook_file(
     if dest_path.exists():
         existing_hash = file_sha256(dest_path)
         if existing_hash == rendered_hash:
-            info(f"{template_name}: already installed and identical, skip")
+            info(f"{template_name}：已安装且内容一致，跳过")
             # Adopt into manifest if untracked (e.g. manifest was lost/reset),
             # so uninstall can still remove it precisely later.
             tracked = manifest.setdefault("installed_files", [])
@@ -252,35 +251,35 @@ def install_hook_file(
                     "template_version": SKILL_VERSION,
                     "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
-                info(f"{template_name}: adopted into manifest (was untracked)")
+                info(f"{template_name}：已补录到 Manifest（此前未跟踪）")
             return "ok"
         if not force:
             if interactive:
-                print(f"\n  Hook {template_name} exists with different content.")
-                print(f"    [s]kip  [r]eplace  [b]ackup-then-replace  [a]bort")
-                choice = input("  Choice? ").strip().lower()
+                print(f"\n  Hook {template_name} 已存在，但内容不同。")
+                print("    [s] 跳过  [r] 替换  [b] 备份后替换  [a] 中止")
+                choice = input("  请选择：").strip().lower()
                 if choice == "s":
-                    info(f"{template_name}: skipped by user (will NOT be registered)")
+                    info(f"{template_name}：用户选择跳过，不会注册")
                     return "skip"
                 if choice == "b":
                     bak = dest_path.with_suffix(f".py.bak.{int(time.time())}")
                     if not dry_run:
                         shutil.copy2(dest_path, bak)
-                    info(f"{template_name}: backup → {bak.name}")
+                    info(f"{template_name}：已备份 → {bak.name}")
                 elif choice == "a":
-                    err("Aborted by user")
+                    err("用户已中止")
                     return "abort"
                 elif choice != "r":
-                    info(f"{template_name}: unrecognized choice, skipping (will NOT be registered)")
+                    info(f"{template_name}：无法识别选项，已跳过且不会注册")
                     return "skip"
             else:
                 # non-interactive: skip on conflict (safe default)
-                warn(f"{template_name}: differs from template, skipping "
-                     "(use --force to overwrite; will NOT be registered)")
+                warn(f"{template_name}：与模板不同，已跳过。"
+                     "可用 --force 覆盖；本次不会注册。")
                 return "skip"
 
     if dry_run:
-        info(f"DRY-RUN: would write {dest_path} ({len(rendered)} bytes)")
+        info(f"预览：将写入 {dest_path}（{len(rendered)} 字节）")
         return "ok"
 
     atomic_write(dest_path, rendered)
@@ -288,7 +287,7 @@ def install_hook_file(
         os.chmod(dest_path, 0o755)
     except Exception:
         pass
-    ok(f"Installed {template_name}")
+    ok(f"已安装 {template_name}")
 
     # Record in manifest
     manifest["installed_files"] = [
@@ -317,7 +316,7 @@ def merge_settings(
         try:
             settings = json.loads(SETTINGS_PATH.read_text())
         except Exception as e:
-            err(f"settings.json unreadable: {e}")
+            err(f"settings.json 无法读取：{e}")
             return False
     else:
         settings = {}
@@ -332,8 +331,7 @@ def merge_settings(
         # same-named file was skipped) — else settings.json would activate that
         # script as ours while it stays untracked in the manifest.
         if template_name not in registerable:
-            warn(f"settings.json: not registering {template_name} — its file "
-                 "was skipped (not our content)")
+            warn(f"settings.json：未注册 {template_name}，因为文件内容不是本项目版本")
             continue
         event = hook_def["event"]
         matcher = hook_def["matcher"]
@@ -366,7 +364,7 @@ def merge_settings(
                 h.get("command", "") for h in existing_entry.get("hooks", [])
             ]
             if command in commands_in_entry:
-                info(f"settings.json: {event}/{matcher} already has our command, skip")
+                info(f"settings.json：{event}/{matcher} 已有本项目命令，跳过")
                 # Adopt: if the registration is present but untracked (manifest
                 # was lost/reset), record it so uninstall won't leave it dangling.
                 tracked = manifest.setdefault("settings_hooks_added", [])
@@ -374,7 +372,7 @@ def merge_settings(
                            and e.get("command") == command for e in tracked):
                     tracked.append({"event": event, "matcher": matcher,
                                     "command": command, "owner": "rules-architect"})
-                    info(f"settings.json: {event}/{matcher} adopted into manifest")
+                    info(f"settings.json：{event}/{matcher} 已补录到 Manifest")
                 continue
             # Different command at same matcher — conflict
             if force:
@@ -385,14 +383,14 @@ def merge_settings(
                     "event": event, "matcher": matcher,
                     "command": command, "owner": "rules-architect",
                 })
-                info(f"settings.json: {event}/{matcher}: appended (forced)")
+                info(f"settings.json：{event}/{matcher} 已强制追加")
             elif interactive:
-                print(f"\n  Conflict: {event}/{matcher} has commands:")
+                print(f"\n  冲突：{event}/{matcher} 已有命令：")
                 for c in commands_in_entry:
                     print(f"    {c}")
-                print(f"  Want to add: {command}")
+                print(f"  准备添加：{command}")
                 choice = input(
-                    "  [a]ppend  [s]kip  [r]eplace_all  abort? ").strip().lower()
+                    "  [a] 追加  [s] 跳过  [r] 全部替换，其他输入中止：").strip().lower()
                 if choice == "a":
                     existing_entry["hooks"].append(
                         {"type": "command", "command": command}
@@ -410,25 +408,25 @@ def merge_settings(
                         "command": command, "owner": "rules-architect",
                     })
                 else:
-                    info(f"settings.json: {event}/{matcher}: skipped")
+                    info(f"settings.json：{event}/{matcher} 已跳过")
                     continue
             else:
-                warn(f"settings.json: {event}/{matcher} conflicts, skipping. "
-                     "Re-run with --force or --interactive")
+                warn(f"settings.json：{event}/{matcher} 存在冲突，已跳过。"
+                     "请使用 --force 或交互模式重试。")
                 continue
 
     if not settings_added_this_run:
-        info("settings.json: no changes needed")
+        info("settings.json：无需修改")
         return True
 
     if dry_run:
-        info(f"DRY-RUN: would write {SETTINGS_PATH}")
-        info(f"DRY-RUN: would add {len(settings_added_this_run)} hook entries")
+        info(f"预览：将写入 {SETTINGS_PATH}")
+        info(f"预览：将新增 {len(settings_added_this_run)} 个 Hook 注册项")
         return True
 
     new_text = json.dumps(settings, indent=2, ensure_ascii=False)
     atomic_write(SETTINGS_PATH, new_text)
-    ok(f"settings.json: added {len(settings_added_this_run)} entries")
+    ok(f"settings.json：已新增 {len(settings_added_this_run)} 个注册项")
 
     # Record in manifest (don't duplicate existing entries)
     existing_settings = manifest.get("settings_hooks_added", [])
@@ -467,58 +465,58 @@ def check_and_enable_claude_md_management(
         else give instructions
     """
     if not SETTINGS_PATH.exists():
-        warn("settings.json not yet created — plugin check deferred")
+        warn("settings.json 尚未创建，插件检查延后")
         return
 
     try:
         settings = json.loads(SETTINGS_PATH.read_text())
     except Exception as e:
-        warn(f"settings.json unreadable for plugin check: {e}")
+        warn(f"插件检查无法读取 settings.json：{e}")
         return
 
     enabled_plugins = settings.get("enabledPlugins", {})
     if enabled_plugins.get(CLAUDE_MD_PLUGIN, False):
-        ok(f"claude-md-management already enabled — L3 audit available")
-        info(f"   Run /claude-md-management:claude-md-improver to audit CLAUDE.md files")
+        ok("claude-md-management 已启用，可进行 L3 审计")
+        info("   运行 /claude-md-management:claude-md-improver 审计 CLAUDE.md")
         return
 
     cached = check_plugin_cached(CLAUDE_MD_PLUGIN)
     if not cached:
         warn(
-            "claude-md-management plugin not installed (needed for L3 CLAUDE.md audit)"
+            "claude-md-management 插件未安装（L3 CLAUDE.md 审计需要）"
         )
-        info("   To install:")
-        info("     1. In Claude Code, run: /plugin claude-md-management")
-        info("     2. Then: /reload-plugins")
-        info("     3. Optionally re-run install_hooks.py to enable it automatically")
+        info("   安装步骤：")
+        info("     1. 在 Claude Code 运行：/plugin claude-md-management")
+        info("     2. 然后运行：/reload-plugins")
+        info("     3. 可重新运行 install_hooks.py 自动启用")
         return
 
     # Plugin downloaded but not enabled — we can flip the flag
-    info(f"claude-md-management is downloaded but not enabled in settings.json")
+    info("claude-md-management 已下载，但未在 settings.json 中启用")
     if not auto_enable:
         if interactive:
             print()
             choice = input(
-                "  Enable claude-md-management now for L3 audit? [Y/n] "
+                "  现在启用 claude-md-management 以进行 L3 审计吗？[Y/n] "
             ).strip().lower()
             if choice in {"n", "no"}:
-                info("Skipping claude-md-management enable")
+                info("已跳过启用 claude-md-management")
                 return
         else:
-            info("   Re-run with --enable-claude-md-management to auto-enable, "
-                 "or enable manually in settings.json")
+            info("   可用 --enable-claude-md-management 自动启用，"
+                 "或手动修改 settings.json")
             return
 
     if dry_run:
-        info(f"DRY-RUN: would enable {CLAUDE_MD_PLUGIN} in settings.json")
+        info(f"预览：将在 settings.json 中启用 {CLAUDE_MD_PLUGIN}")
         return
 
     enabled_plugins[CLAUDE_MD_PLUGIN] = True
     settings["enabledPlugins"] = enabled_plugins
     atomic_write(SETTINGS_PATH, json.dumps(settings, indent=2, ensure_ascii=False))
-    ok(f"Enabled {CLAUDE_MD_PLUGIN}")
-    info("   Run /reload-plugins in Claude Code to activate")
-    info("   Then run /claude-md-management:claude-md-improver for L3 audit")
+    ok(f"已启用 {CLAUDE_MD_PLUGIN}")
+    info("   在 Claude Code 运行 /reload-plugins 激活")
+    info("   再运行 /claude-md-management:claude-md-improver 进行 L3 审计")
 
 
 # === Dry-run hook validation ===
@@ -551,9 +549,9 @@ def smoke_test_all() -> bool:
         if not path.exists():
             continue
         if smoke_test_hook(path, sample):
-            ok(f"smoke-test {name}: pass")
+            ok(f"冒烟测试 {name}：通过")
         else:
-            err(f"smoke-test {name}: FAIL")
+            err(f"冒烟测试 {name}：失败")
             all_pass = False
     return all_pass
 
@@ -563,57 +561,57 @@ def smoke_test_all() -> bool:
 def print_content_preservation_summary(backup_path: Optional[str]) -> None:
     """Show what the install touched vs preserved — for user trust."""
     print()
-    print("✅ Content preservation summary:")
+    print("✅ 内容保护摘要：")
     print()
-    print("   ✋ Your L1 memory files       — NOT touched (entirely yours)")
-    print("   ✋ Your CLAUDE.md             — NOT touched")
-    print("   ✋ Existing hook scripts      — skipped on hash mismatch (your edits preserved)")
-    print("   ✋ Existing settings.json entries — deep-merge preserves everything else")
+    print("   ✋ L1 个人记忆文件            — 未修改")
+    print("   ✋ CLAUDE.md                  — 未修改")
+    print("   ✋ 已有 Hook 脚本             — 哈希不一致时跳过，保留你的修改")
+    print("   ✋ settings.json 其他配置     — deep-merge 完整保留")
     print()
-    print("   ⭐ Changes (all tracked in manifest):")
-    print("      + 3 core hook scripts in ~/.claude/hooks/")
-    print("      + 3 hook entries in ~/.claude/settings.json")
+    print("   ⭐ 本次变更（全部记录在 Manifest）：")
+    print("      + ~/.claude/hooks/ 中的 3 个核心 Hook")
+    print("      + ~/.claude/settings.json 中的 3 个 Hook 注册项")
     print("        (memory_intake_check / rule_intake_reminder / cleanup_hook)")
-    print("        For opt-in workflow hooks, see examples/")
+    print("        可选工作流 Hook 见 examples/")
     if backup_path:
-        print(f"      → settings.json backed up: {backup_path}")
+        print(f"      → settings.json 备份：{backup_path}")
     print()
-    print("   Anything outside the above list was NOT modified by this skill.")
-    print("   Uninstall is precise (hash-verified per manifest).")
+    print("   除上述项目外，本 Skill 未修改其他内容。")
+    print("   卸载时按 Manifest 和哈希精确回滚。")
     print()
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Install rules-architect hooks")
+    ap = argparse.ArgumentParser(description="安装 rules-architect Hook")
     ap.add_argument("--dry-run", action="store_true",
-                    help="Print plan, modify nothing")
+                    help="仅显示计划，不修改文件")
     ap.add_argument("--non-interactive", action="store_true",
-                    help="Never prompt; default to safe choice (skip conflicts)")
+                    help="不询问；冲突时采用安全默认值（跳过）")
     ap.add_argument("--force", action="store_true",
-                    help="Overwrite existing files & hook entries")
+                    help="覆盖已有文件并追加 Hook 注册项")
     ap.add_argument("--rule-intake-keywords",
                     choices=["chinese", "english"], default="chinese",
-                    help="Keyword preset for rule_intake_reminder.py")
+                    help="rule_intake_reminder.py 的关键词预设")
     ap.add_argument("--protected-branches", default="develop|test|master",
-                    help="Pipe-separated protected branches for "
+                    help="用竖线分隔的受保护分支，供 "
                          "dangerous_branch_reminder.py")
     ap.add_argument("--skip-version-check", action="store_true",
-                    help="Bypass CC version check (not recommended)")
+                    help="跳过 Claude Code 版本检查（不推荐）")
     ap.add_argument("--enable-claude-md-management", action="store_true",
-                    help="Auto-enable claude-md-management plugin "
-                         "if downloaded (needed for L3 audit)")
+                    help="若已下载则自动启用 claude-md-management 插件"
+                         "（L3 审计需要）")
     ap.add_argument("--skip-plugin-check", action="store_true",
-                    help="Skip claude-md-management plugin check entirely")
+                    help="完全跳过 claude-md-management 插件检查")
     args = ap.parse_args()
 
-    print(f"\n📦 rules-architect installer v{SKILL_VERSION}")
-    print(f"   Mode: {'DRY-RUN' if args.dry_run else 'INSTALL'}")
-    print(f"   Interactive: {not args.non_interactive}")
-    print(f"   Force: {args.force}")
-    print(f"   Templates: {TEMPLATES_DIR}")
-    print(f"   Dest:      {HOOKS_DEST}")
-    print(f"   Settings:  {SETTINGS_PATH}")
-    print(f"   Manifest:  {MANIFEST_PATH}")
+    print(f"\n📦 rules-architect 安装器 v{SKILL_VERSION}")
+    print(f"   模式：{'仅预览' if args.dry_run else '安装'}")
+    print(f"   交互：{'是' if not args.non_interactive else '否'}")
+    print(f"   强制：{'是' if args.force else '否'}")
+    print(f"   模板目录：{TEMPLATES_DIR}")
+    print(f"   安装目录：{HOOKS_DEST}")
+    print(f"   配置文件：{SETTINGS_PATH}")
+    print(f"   Manifest：{MANIFEST_PATH}")
     print()
 
     # 1. CC version check
@@ -627,13 +625,12 @@ def main() -> int:
         try:
             _cfg = json.loads(SETTINGS_PATH.read_text())
         except Exception as e:
-            err(f"settings.json is present but not valid JSON ({e}). "
-                "Fix it first so install stays atomic and rollback precise.")
+            err(f"settings.json 不是有效 JSON（{e}）。"
+                "请先修复，以保证安装原子性和精确回滚。")
             return 2
         if not isinstance(_cfg, dict) or not isinstance(_cfg.get("hooks", {}), dict):
-            err("settings.json has an unexpected shape (root must be an object "
-                "with an object 'hooks'). Fix it first so the merge can't fail "
-                "mid-install after files are written.")
+            err("settings.json 结构不符合预期：根节点和 hooks 必须是对象。"
+                "请先修复，避免写入文件后合并失败。")
             return 2
 
     # 2. Backup
@@ -652,7 +649,7 @@ def main() -> int:
     }
 
     # 5. Install hooks
-    print("\n--- Installing hook files ---")
+    print("\n--- 安装 Hook 文件 ---")
     all_ok = True
     registerable = set()
     for template_name, _ in HOOK_TEMPLATES:
@@ -668,15 +665,15 @@ def main() -> int:
             registerable.add(template_name)
 
     if not all_ok:
-        err("Hook installation failed. Backup at: " + str(backup_path or "n/a"))
+        err("Hook 安装失败。备份位置：" + str(backup_path or "无"))
         return 3
 
     # 6. Merge settings.json
-    print("\n--- Merging settings.json ---")
+    print("\n--- 合并 settings.json ---")
     if not merge_settings(manifest, args.dry_run, args.force,
                           interactive=not args.non_interactive,
                           registerable=registerable):
-        err("settings.json merge failed.")
+        err("settings.json 合并失败。")
         return 4
 
     # 7. Save manifest
@@ -685,11 +682,11 @@ def main() -> int:
         manifest["skill_version"] = SKILL_VERSION
         manifest["min_cc_version"] = MIN_CC_VERSION
         save_manifest(manifest)
-        ok(f"Manifest saved → {MANIFEST_PATH}")
+        ok(f"Manifest 已保存 → {MANIFEST_PATH}")
 
     # 7.5. Check claude-md-management plugin (L3 audit)
     if not args.skip_plugin_check:
-        print("\n--- L3 audit prerequisite: claude-md-management plugin ---")
+        print("\n--- L3 审计依赖：claude-md-management 插件 ---")
         check_and_enable_claude_md_management(
             auto_enable=args.enable_claude_md_management,
             interactive=not args.non_interactive,
@@ -698,17 +695,17 @@ def main() -> int:
 
     # 8. Smoke test
     if not args.dry_run:
-        print("\n--- Smoke-testing installed hooks ---")
+        print("\n--- 对已安装 Hook 执行冒烟测试 ---")
         smoke_test_all()
 
     # 9. Summary
     print_content_preservation_summary(backup_path)
-    print("✨ Install complete.")
-    print(f"   See {MANIFEST_PATH} for what was installed.")
-    print(f"   Configure via env vars:")
-    print(f"     RULE_INTAKE_KEYWORDS={args.rule_intake_keywords}  (set in shell)")
+    print("✨ 安装完成。")
+    print(f"   已安装内容见 {MANIFEST_PATH}")
+    print("   可通过环境变量配置：")
+    print(f"     RULE_INTAKE_KEYWORDS={args.rule_intake_keywords}  （在 Shell 中设置）")
     print(f"     PROTECTED_BRANCHES='{args.protected_branches}'")
-    print(f"   Uninstall: python3 {SKILL_DIR}/scripts/uninstall.py")
+    print(f"   卸载：python3 {SKILL_DIR}/scripts/uninstall.py")
     print()
     return 0
 

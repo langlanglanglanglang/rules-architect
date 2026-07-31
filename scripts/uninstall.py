@@ -94,29 +94,29 @@ def remove_installed_files(manifest, dry_run, force, non_interactive,
         p = Path(entry["path"])
         recorded_hash = entry.get("hash_sha256")
         if not p.exists():
-            info(f"{p}: already gone, skip")
+            info(f"{p}：文件已不存在，跳过")
             manifest[key].remove(entry)
             continue
         try:
             actual = file_sha256(p)
         except Exception as e:
-            warn(f"{p}: cannot hash ({e}), skip")
+            warn(f"{p}：无法计算哈希（{e}），跳过")
             continue
         if actual != recorded_hash:
             if force:
                 pass  # proceed
             elif non_interactive:
-                warn(f"{p}: modified since install, skipping (use --force)")
+                warn(f"{p}：安装后已被修改，跳过（可使用 --force）")
                 continue
             else:
-                warn(f"{p}: hash mismatch — file modified since install")
-                if not confirm("    Delete anyway?", default_yes=False):
+                warn(f"{p}：哈希不一致，文件在安装后被修改")
+                if not confirm("    仍要删除吗？", default_yes=False):
                     continue
         if dry_run:
-            info(f"DRY-RUN: would delete {p}")
+            info(f"仅预览：将删除 {p}")
         else:
             p.unlink()
-            ok(f"Deleted {p}")
+            ok(f"已删除 {p}")
         manifest[key].remove(entry)
         removed_any = True
     return removed_any
@@ -129,7 +129,7 @@ def remove_settings_hooks(manifest, dry_run):
     try:
         settings = json.loads(SETTINGS_PATH.read_text())
     except Exception as e:
-        err(f"settings.json unreadable: {e}")
+        err(f"无法读取 settings.json：{e}")
         return
 
     targets = set(
@@ -161,14 +161,14 @@ def remove_settings_hooks(manifest, dry_run):
 
     if removed:
         if dry_run:
-            info(f"DRY-RUN: would remove {removed} hook entries from settings.json")
+            info(f"仅预览：将从 settings.json 移除 {removed} 个 Hook 条目")
         else:
             new_text = json.dumps(settings, indent=2, ensure_ascii=False)
             atomic_write(SETTINGS_PATH, new_text)
-            ok(f"Removed {removed} hook entries from settings.json")
+            ok(f"已从 settings.json 移除 {removed} 个 Hook 条目")
         manifest["settings_hooks_added"] = []
     else:
-        info("No matching hook entries in settings.json")
+        info("settings.json 中没有匹配的 Hook 条目")
 
 
 def remove_codex_hooks(manifest, dry_run):
@@ -181,7 +181,7 @@ def remove_codex_hooks(manifest, dry_run):
     try:
         config = json.loads(CODEX_HOOKS_JSON.read_text())
     except Exception as e:
-        err(f"codex hooks.json unreadable: {e}")
+        err(f"无法读取 Codex hooks.json：{e}")
         return
 
     targets = set((e["event"], e["matcher"], e["command"]) for e in added)
@@ -213,14 +213,14 @@ def remove_codex_hooks(manifest, dry_run):
 
     if removed:
         if dry_run:
-            info(f"DRY-RUN: would remove {removed} entries from codex hooks.json")
+            info(f"仅预览：将从 Codex hooks.json 移除 {removed} 个条目")
         else:
             atomic_write(CODEX_HOOKS_JSON,
                          json.dumps(config, indent=2, ensure_ascii=False))
-            ok(f"Removed {removed} entries from codex hooks.json")
+            ok(f"已从 Codex hooks.json 移除 {removed} 个条目")
         manifest["codex_hooks_added"] = []
     else:
-        info("No matching entries in codex hooks.json")
+        info("Codex hooks.json 中没有匹配条目")
 
 
 def remove_personal_sections(manifest, dry_run, force, non_interactive):
@@ -230,12 +230,12 @@ def remove_personal_sections(manifest, dry_run, force, non_interactive):
         begin = s["marker_begin"]
         end = s["marker_end"]
         if not f.exists():
-            info(f"{f}: already gone, skip")
+            info(f"{f}：文件已不存在，跳过")
             sections.remove(s)
             continue
         text = f.read_text()
         if begin not in text or end not in text:
-            warn(f"{f}: markers not found, leave untouched")
+            warn(f"{f}：未找到区块标记，保持不变")
             sections.remove(s)
             continue
         # Remove the markered block
@@ -250,53 +250,53 @@ def remove_personal_sections(manifest, dry_run, force, non_interactive):
         current_hash = text_sha256(m.group(0)) if m else None
         if recorded and current_hash and current_hash != recorded and not force:
             if non_interactive:
-                warn(f"{f}: §六 block modified since install — preserving "
-                     "(use --force to delete anyway)")
+                warn(f"{f}：§六区块在安装后已被修改，将予以保留"
+                     "（如确需删除，请使用 --force）")
                 # keep tracked so a later --force can still find/remove it
                 continue
-            if not confirm(f"{f}: §六 block was edited since install. Delete anyway?",
+            if not confirm(f"{f}：§六区块在安装后已被编辑，仍要删除吗？",
                            default_yes=False):
-                info(f"{f}: §六 preserved by user choice")
+                info(f"{f}：已按用户选择保留 §六")
                 continue  # keep tracked
         new_text = pattern.sub("", text, count=1)
         if dry_run:
-            info(f"DRY-RUN: would remove §六 markers from {f}")
+            info(f"仅预览：将从 {f} 移除 §六标记区块")
         else:
             atomic_write(f, new_text)
-            ok(f"Removed §六 from {f}")
+            ok(f"已从 {f} 移除 §六")
         sections.remove(s)
 
 
 def restore_backup_if_requested(manifest, dry_run):
     bak = manifest.get("settings_backup_path")
     if not bak:
-        warn("No settings backup recorded in manifest")
+        warn("Manifest 中没有记录 settings 备份")
         return
     bak_path = Path(bak)
     if not bak_path.exists():
-        warn(f"Backup file missing: {bak}")
+        warn(f"备份文件不存在：{bak}")
         return
     if dry_run:
-        info(f"DRY-RUN: would restore {bak} → {SETTINGS_PATH}")
+        info(f"仅预览：将恢复 {bak} → {SETTINGS_PATH}")
         return
     shutil.copy2(bak_path, SETTINGS_PATH)
-    ok(f"Restored settings.json from {bak_path.name}")
+    ok(f"已从 {bak_path.name} 恢复 settings.json")
 
 
 
 def print_uninstall_preservation_summary() -> None:
     """Show what uninstall did NOT touch — for user trust."""
     print()
-    print("✅ What we did NOT touch on uninstall:")
+    print("✅ 卸载时不会改动以下内容：")
     print()
-    print("   ✋ Your L1 memory files                — entirely yours, never deleted")
-    print("   ✋ Your CLAUDE.md                       — never touched")
-    print("   ✋ Your CLAUDE-personal.md outside §六  — §一~§五 (and others) preserved")
-    print("   ✋ Other hooks in settings.json         — only our 3 entries removed")
-    print("   ✋ Other .claude/rules/*.md             — only rule-intake.md removed")
-    print("   ✋ Other entries in codex hooks.json    — only our entries removed")
+    print("   ✋ L1 个人记忆文件                    — 完全归用户所有，绝不删除")
+    print("   ✋ CLAUDE.md                           — 不做改动")
+    print("   ✋ CLAUDE-personal.md 的 §六之外内容  — 保留 §一～§五及其他内容")
+    print("   ✋ settings.json 中的其他 Hook        — 只移除本项目添加的条目")
+    print("   ✋ 其他 .claude/rules/*.md            — 只移除 rule-intake.md")
+    print("   ✋ Codex hooks.json 中的其他条目      — 只移除本项目添加的条目")
     print()
-    print("   Files you modified locally (hash mismatch) → skipped with warning, never deleted.")
+    print("   本地修改过且哈希不一致的文件 → 警告后跳过，绝不直接删除。")
     print()
 
 
@@ -305,67 +305,67 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--non-interactive", action="store_true")
     ap.add_argument("--force", action="store_true",
-                    help="Delete files even on hash mismatch (DANGEROUS: with a "
-                         "hand-pointed RULES_ARCHITECT_MANIFEST this bypasses the "
-                         "hash guard and can delete arbitrary listed paths)")
+                    help="即使哈希不一致也删除文件（危险：手动指定 "
+                         "RULES_ARCHITECT_MANIFEST 会绕过哈希保护，并可能删除"
+                         "其中列出的任意路径）")
     ap.add_argument("--restore-backup", action="store_true",
-                    help="Also restore settings.json from backup file "
-                         "(NOT precise rollback — full overwrite)")
+                    help="同时从备份恢复 settings.json"
+                         "（不是精确回滚，而是完整覆盖）")
     args = ap.parse_args()
 
     if not MANIFEST_PATH.exists():
-        err(f"No manifest found at {MANIFEST_PATH} — nothing to uninstall")
+        err(f"在 {MANIFEST_PATH} 未找到 Manifest，没有可卸载内容")
         return 1
 
     try:
         manifest = json.loads(MANIFEST_PATH.read_text())
     except Exception as e:
-        err(f"Manifest at {MANIFEST_PATH} is unreadable ({e}).")
-        err("Refusing to uninstall — without a valid manifest we cannot know "
-            "which files are ours. Fix or remove the manifest, then re-run.")
+        err(f"无法读取 {MANIFEST_PATH} 中的 Manifest（{e}）。")
+        err("已拒绝卸载：没有有效 Manifest 就无法判断哪些文件属于本项目。"
+            "请修复或移除该 Manifest 后重新运行。")
         return 1
     # Dry-run must not mutate any state that affects observable output; the
     # remove_* helpers pop entries from the manifest dict, so operate on a
     # throwaway copy when previewing. (Real runs mutate the live manifest,
     # which is then archived below.)
     work = copy.deepcopy(manifest) if args.dry_run else manifest
-    print(f"\n📦 rules-architect uninstaller")
-    print(f"   Manifest: {MANIFEST_PATH}")
-    print(f"   Installed files: {len(manifest.get('installed_files', []))}")
-    print(f"   Settings hook entries: {len(manifest.get('settings_hooks_added', []))}")
-    print(f"   Personal MD sections: {len(manifest.get('personal_md_sections', []))}")
-    print(f"   Codex hook files: {len(manifest.get('codex_installed_files', []))}")
-    print(f"   Codex hook entries: {len(manifest.get('codex_hooks_added', []))}")
+    print(f"\n📦 rules-architect 卸载器")
+    print(f"   Manifest：{MANIFEST_PATH}")
+    print(f"   已安装文件：{len(manifest.get('installed_files', []))}")
+    print(f"   settings Hook 条目：{len(manifest.get('settings_hooks_added', []))}")
+    print(f"   个人 Markdown 区块：{len(manifest.get('personal_md_sections', []))}")
+    print(f"   Codex Hook 文件：{len(manifest.get('codex_installed_files', []))}")
+    print(f"   Codex Hook 条目：{len(manifest.get('codex_hooks_added', []))}")
     print()
 
     if not args.non_interactive:
-        if not confirm("Proceed with uninstall?", default_yes=False):
-            err("Aborted")
+        if not confirm("是否继续卸载？", default_yes=False):
+            err("已取消")
             return 1
 
-    print("\n--- Removing installed hook files ---")
+    print("\n--- 正在移除已安装的 Hook 文件 ---")
     remove_installed_files(work, args.dry_run, args.force, args.non_interactive)
 
-    print("\n--- Removing hook entries from settings.json ---")
+    print("\n--- 正在从 settings.json 移除 Hook 条目 ---")
     remove_settings_hooks(work, args.dry_run)
 
-    print("\n--- Removing Codex hook files ---")
+    print("\n--- 正在移除 Codex Hook 文件 ---")
     remove_installed_files(work, args.dry_run, args.force,
                            args.non_interactive, key="codex_installed_files")
 
-    print("\n--- Removing hook entries from codex hooks.json ---")
+    print("\n--- 正在从 Codex hooks.json 移除 Hook 条目 ---")
     remove_codex_hooks(work, args.dry_run)
 
-    print("\n--- Removing §六 sections from personal markdown ---")
+    print("\n--- 正在从个人 Markdown 移除 §六区块 ---")
     remove_personal_sections(work, args.dry_run,
                              args.force, args.non_interactive)
 
     if args.restore_backup:
-        print("\n--- Restoring settings.json backup ---")
+        print("\n--- 正在恢复 settings.json 备份 ---")
         restore_backup_if_requested(work, args.dry_run)
 
     if args.dry_run:
-        info("DRY-RUN complete. Nothing was actually changed.")
+        info("仅预览完成，没有实际修改任何内容。")
         return 0
 
     # If any tracked entries were preserved/skipped (e.g. locally-modified files
@@ -376,18 +376,18 @@ def main() -> int:
         "settings_hooks_added", "codex_hooks_added", "personal_md_sections"))
     if remaining:
         save_manifest(work)
-        warn(f"{remaining} tracked item(s) preserved (modified/skipped) — manifest "
-             f"kept at {MANIFEST_PATH}, NOT archived. Re-run with --force to remove them.")
+        warn(f"已保留 {remaining} 个跟踪项（被修改或跳过）— Manifest 仍保存在 "
+             f"{MANIFEST_PATH}，未归档。如需移除，请使用 --force 重新运行。")
     else:
         ts = time.strftime("%Y%m%d-%H%M%S")
         removed_path = MANIFEST_PATH.with_suffix(f".json.removed.{ts}")
         MANIFEST_PATH.rename(removed_path)
-        ok(f"Manifest archived → {removed_path}")
+        ok(f"Manifest 已归档 → {removed_path}")
 
     print_uninstall_preservation_summary()
-    print("✨ Uninstall complete.")
-    print("   Files you modified manually are preserved.")
-    print("   Re-install: python3 .../scripts/install_hooks.py")
+    print("✨ 卸载完成。")
+    print("   手动修改过的文件均已保留。")
+    print("   重新安装：python3 .../scripts/install_hooks.py")
     return 0
 
 
