@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,7 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "2.1.0-dev"
+SKILL_VERSION = "2.4.0"
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "hooks" / "generated-hook-skeleton.py.tmpl"
 HOOKS_DEST = Path.home() / ".claude" / "hooks"
@@ -108,6 +109,8 @@ def main():
                     help="单行说明")
     ap.add_argument("--feedback-source", default="",
                     help="来源记忆文件（例如 feedback_xxx）")
+    ap.add_argument("--rule-id", default="",
+                    help="稳定规则 ID（默认由 --name 生成）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -115,6 +118,10 @@ def main():
     name = args.name.strip()
     if not name.replace("_", "").isalnum():
         err(f"--name 无效：'{name}'（只能包含字母、数字和下划线）")
+        return 1
+    rule_id = args.rule_id.strip() or "R-{}".format(name.replace("_", "-"))
+    if not re.fullmatch(r"[A-Za-z0-9._:-]+", rule_id):
+        err("--rule-id 无效：只能包含字母、数字、点、下划线、冒号和连字符")
         return 1
     reminder = Path(args.reminder_file).read_text().rstrip("\n")
     if not reminder.strip():
@@ -143,6 +150,7 @@ def main():
     rendered = TEMPLATE_PATH.read_text()
     rendered = (rendered
         .replace("{{NAME}}", name)
+        .replace("{{RULE_ID}}", rule_id)
         .replace("{{EVENT}}", args.event)
         .replace("{{MATCHER}}", _docstring_safe(args.matcher))
         .replace("{{REMINDER_JSON}}", json.dumps(reminder, ensure_ascii=False))
@@ -207,6 +215,7 @@ def main():
         "hash_sha256": rendered_hash,
         "owner": "rules-architect",
         "kind": "generated-from-memory",
+        "rule_id": rule_id,
         "feedback_source": args.feedback_source,
         "template_version": SKILL_VERSION,
         "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

@@ -4,7 +4,7 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.4.0] — 2026-08-03
 
 ### Added
 
@@ -19,6 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Unit coverage for discovery, extraction, deterministic fingerprints,
   recommendation coverage, blocking-hook requirements, and tamper detection.
 - Isolated inventory → validate → render integration test.
+- Convergent repeated-run reconciliation with stable rule IDs, private
+  per-project state, hook ownership/health discovery, and a guarded apply tool.
 
 ### Changed
 
@@ -31,6 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   install and migration modes remain explicit, compatible flows.
 - Hook recommendations distinguish `block` from `remind` instead of treating
   context injection as blocking.
+- Lifecycle recommendations now distinguish create/reuse/update/disable/delete/
+  keep/review and refuse automatic changes to external, unknown, or locally
+  modified hook artifacts.
 
 ### Fixed
 
@@ -39,6 +44,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Promotion integration coverage now proves that the live body changed and the
   backup contains the original text.
 - Temporary diagnostic artifacts no longer use a fixed shared `/tmp` filename.
+- Cleanup maintenance now removes expired `.cooldown` files as well as `.lock`
+  files.
 
 ## [2.3.0] — 2026-07-13
 

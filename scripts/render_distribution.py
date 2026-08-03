@@ -35,8 +35,12 @@ CONFIDENCE_LABEL = {
 }
 ACTION_LABEL = {
     "keep": "保留",
+    "reuse": "复用",
     "move": "迁移",
     "create": "创建",
+    "update": "修改",
+    "disable": "禁用",
+    "delete": "删除",
     "review": "复核",
 }
 DELIVERY_LABEL = {
@@ -46,6 +50,22 @@ DELIVERY_LABEL = {
     "delivery": "加载方式",
 }
 MODE_LABEL = {"block": "阻断", "remind": "提醒", "unknown": "未知"}
+OWNERSHIP_LABEL = {
+    "rules_architect": "rules-architect",
+    "external_tool": "外部工具",
+    "user_managed": "用户维护",
+    "unknown": "未知",
+}
+STATUS_LABEL = {
+    "active": "已启用",
+    "orphan": "孤立文件",
+    "modified_orphan": "已修改的孤立文件",
+    "dangling_registration": "失效注册",
+    "registered_command": "命令型注册",
+    "modified": "本地已修改",
+    "missing": "文件缺失",
+    "symlink": "符号链接",
+}
 
 
 def load_json(path):
@@ -91,10 +111,18 @@ def format_adapter(adapter):
 
 def render(data, inventory=None, verbose=False):
     inventory_map = {}
+    artifact_map = {}
     if inventory:
         inventory_map = {
             c["occurrence_id"]: c
             for c in inventory.get("rule_candidates", [])
+        }
+        artifact_map = {
+            artifact["artifact_id"]: artifact
+            for artifact in (
+                inventory.get("hook_artifacts", [])
+                + inventory.get("path_rule_artifacts", [])
+            )
         }
     lines = ["规则分布建议（只读，尚未修改文件）", ""]
     if inventory:
@@ -108,6 +136,28 @@ def render(data, inventory=None, verbose=False):
             )
         )
         lines.append("")
+
+    action_counts = {}
+    for item in data.get("recommendations", []):
+        action = item.get("action", "review")
+        action_counts[action] = action_counts.get(action, 0) + 1
+    lines.append("生命周期变更摘要")
+    lines.append("")
+    if action_counts:
+        lines.append("；".join(
+            "{} {}".format(ACTION_LABEL.get(action, action), count)
+            for action, count in (
+                (name, action_counts[name])
+                for name in (
+                    "create", "reuse", "update", "move", "disable",
+                    "delete", "keep", "review"
+                )
+                if name in action_counts
+            )
+        ))
+    else:
+        lines.append("无规则建议")
+    lines.append("")
 
     grouped = {name: [] for name, _ in GROUP_ORDER}
     for item in data.get("recommendations", []):
@@ -157,6 +207,21 @@ def render(data, inventory=None, verbose=False):
                 lines.append(
                     "执行：{}".format(
                         "；".join(format_adapter(e) for e in item["enforcement"])
+                    )
+                )
+            for artifact_id in item.get("artifact_ids", []):
+                artifact = artifact_map.get(artifact_id)
+                if not artifact:
+                    continue
+                lines.append(
+                    "产物：{} [{} / {}]".format(
+                        artifact.get("path") or artifact.get("command") or artifact_id,
+                        OWNERSHIP_LABEL.get(
+                            artifact.get("ownership"), artifact.get("ownership", "未知")
+                        ),
+                        STATUS_LABEL.get(
+                            artifact.get("status"), artifact.get("status", "未知")
+                        ),
                     )
                 )
             if inventory_map:
@@ -213,6 +278,110 @@ def render(data, inventory=None, verbose=False):
         lines.append("")
 
     if inventory:
+        artifacts = inventory.get("hook_artifacts", [])
+        decisions = {
+            item.get("artifact_id"): item
+            for item in data.get("artifact_decisions", [])
+            if isinstance(item, dict)
+        }
+        active = sum(1 for artifact in artifacts if artifact.get("status") == "active")
+        findings = [
+            artifact for artifact in artifacts
+            if artifact.get("status") != "active"
+        ]
+        lines.append(
+            "Hook 实际状态（{} 个，正常 {} 个，需关注 {} 个）".format(
+                len(artifacts), active, len(findings)
+            )
+        )
+        lines.append("")
+        if not findings:
+            lines.append("（无异常）")
+        else:
+            for artifact in findings:
+                lines.append(
+                    "- [{}][{}] {}".format(
+                        STATUS_LABEL.get(
+                            artifact.get("status"), artifact.get("status", "未知")
+                        ),
+                        OWNERSHIP_LABEL.get(
+                            artifact.get("ownership"), artifact.get("ownership", "未知")
+                        ),
+                        artifact.get("path") or artifact.get("command") or artifact["artifact_id"],
+                    )
+                )
+                if artifact.get("modified_since_managed"):
+                    lines.append("  本地内容与 Manifest 哈希不一致，只能人工复核。")
+                decision = decisions.get(artifact.get("artifact_id"))
+                if decision:
+                    lines.append(
+                        "  建议：{}；{}".format(
+                            ACTION_LABEL.get(decision["action"], decision["action"]),
+                            decision["reason"],
+                        )
+                    )
+        lines.append("")
+
+        path_artifacts = inventory.get("path_rule_artifacts", [])
+        lines.append("路径规则实际状态（{} 个）".format(len(path_artifacts)))
+        lines.append("")
+        if not path_artifacts:
+            lines.append("（无）")
+        else:
+            for artifact in path_artifacts:
+                decision = decisions.get(artifact.get("artifact_id"))
+                line = "- [{}][{}] {}".format(
+                    STATUS_LABEL.get(artifact.get("status"), artifact.get("status")),
+                    OWNERSHIP_LABEL.get(artifact.get("ownership"), artifact.get("ownership")),
+                    artifact["path"],
+                )
+                if decision:
+                    line += " → {}".format(ACTION_LABEL.get(decision["action"], decision["action"]))
+                lines.append(line)
+        lines.append("")
+
+        artifact_decisions = data.get("artifact_decisions", [])
+        lines.append("产物决策（{}）".format(len(artifact_decisions)))
+        lines.append("")
+        if not artifact_decisions:
+            lines.append("（无）")
+        else:
+            for index, decision in enumerate(artifact_decisions, 1):
+                artifact = artifact_map.get(decision["artifact_id"], {})
+                lines.append(
+                    "{}. [{}] {} — {}".format(
+                        index,
+                        ACTION_LABEL.get(decision["action"], decision["action"]),
+                        artifact.get("path") or artifact.get("command") or decision["artifact_id"],
+                        decision["reason"],
+                    )
+                )
+        lines.append("")
+
+        operations = data.get("operations", [])
+        lines.append("待应用操作（{}）".format(len(operations)))
+        lines.append("")
+        if not operations:
+            lines.append("（无）")
+        else:
+            for index, operation in enumerate(operations, 1):
+                lines.append(
+                    "{}. [{}] {}".format(
+                        index,
+                        ACTION_LABEL.get(operation["action"], operation["action"]),
+                        operation["reason"],
+                    )
+                )
+                target = operation.get("path") or operation.get("artifact_id")
+                if target:
+                    lines.append("   目标：{}".format(target))
+                lines.append(
+                    "   需要确认：{}".format(
+                        "是" if operation.get("requires_confirmation") else "否"
+                    )
+                )
+        lines.append("")
+
         errors = inventory.get("source_errors", [])
         skipped = inventory.get("skipped_sources", [])
         lines.append("扫描问题（{}）".format(len(errors) + len(skipped)))

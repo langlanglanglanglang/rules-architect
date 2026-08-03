@@ -2,7 +2,7 @@
 """
 SessionStart hook: maintenance of rules-architect hook state.
 
-- Delete stale dedupe lock files (mtime > 24h)
+- Delete stale dedupe lock/cooldown files (mtime > 24h)
 - Rotate audit.jsonl when > {{AUDIT_MAX_BYTES}} (default 1 MB)
 - Output nothing to context (silent maintenance)
 
@@ -36,18 +36,19 @@ AUDIT_MAX_BYTES = int(os.environ.get("AUDIT_MAX_BYTES", 1024 * 1024))   # 1 MB
 
 
 def cleanup_locks(now: float) -> int:
-    """Remove .lock files older than TTL. Returns count removed."""
+    """Remove stale dedupe state older than TTL. Returns count removed."""
     removed = 0
     if not CACHE.exists():
         return 0
-    for p in CACHE.glob("*.lock"):
-        try:
-            mtime = p.stat().st_mtime
-            if (now - mtime) > LOCK_TTL_SECONDS:
-                p.unlink()
-                removed += 1
-        except Exception:
-            continue
+    for pattern in ("*.lock", "*.cooldown"):
+        for p in CACHE.glob(pattern):
+            try:
+                mtime = p.stat().st_mtime
+                if (now - mtime) > LOCK_TTL_SECONDS:
+                    p.unlink()
+                    removed += 1
+            except Exception:
+                continue
     return removed
 
 

@@ -54,7 +54,7 @@ from pathlib import Path
 from typing import Optional
 
 
-SKILL_VERSION = "1.0.0"
+SKILL_VERSION = "2.4.0"
 MIN_CODEX_VERSION = "0.124.0"   # hooks engine stable as of v0.124.0
 
 # Codex event/matcher mapping. matcher=None → emit an entry with no "matcher"
@@ -251,6 +251,7 @@ def install_hook_file(
                     "path": str(dest_path),
                     "hash_sha256": rendered_hash,
                     "owner": "rules-architect",
+                    "rule_id": "R-" + Path(template_name).stem.replace("_", "-"),
                     "template_version": SKILL_VERSION,
                     "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
@@ -299,6 +300,7 @@ def install_hook_file(
         "path": str(dest_path),
         "hash_sha256": rendered_hash,
         "owner": "rules-architect",
+        "rule_id": "R-" + Path(template_name).stem.replace("_", "-"),
         "template_version": SKILL_VERSION,
         "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })

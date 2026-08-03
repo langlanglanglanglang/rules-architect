@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Optional
 
 
-SKILL_VERSION = "1.0.0"
+SKILL_VERSION = "2.4.0"
 MIN_CC_VERSION = "1.5.0"   # UserPromptSubmit hook required
 
 # Core hooks: SOP injection + base infrastructure.
@@ -248,6 +248,7 @@ def install_hook_file(
                     "path": str(dest_path),
                     "hash_sha256": rendered_hash,
                     "owner": "rules-architect",
+                    "rule_id": "R-" + Path(template_name).stem.replace("_", "-"),
                     "template_version": SKILL_VERSION,
                     "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
@@ -298,6 +299,7 @@ def install_hook_file(
         "path": str(dest_path),
         "hash_sha256": rendered_hash,
         "owner": "rules-architect",
+        "rule_id": "R-" + Path(template_name).stem.replace("_", "-"),
         "template_version": SKILL_VERSION,
         "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })

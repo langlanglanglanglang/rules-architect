@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import hashlib
 from pathlib import Path
 
 
@@ -72,6 +73,9 @@ class RuleInventoryTest(unittest.TestCase):
     def run_inventory(self, project_root=None):
         env = dict(os.environ)
         env["HOME"] = str(self.home)
+        env.pop("XDG_STATE_HOME", None)
+        env.pop("RULES_ARCHITECT_STATE_HOME", None)
+        env.pop("RULES_ARCHITECT_MANIFEST", None)
         proc = subprocess.run(
             [
                 sys.executable,
@@ -148,6 +152,20 @@ class RuleInventoryTest(unittest.TestCase):
         )
         self.assertEqual(first["rule_candidates"], second["rule_candidates"])
 
+    def test_previous_private_state_participates_in_next_run(self):
+        key = hashlib.sha256(str(self.project.resolve()).encode()).hexdigest()[:24]
+        state = (
+            self.home / ".local" / "state" / "rules-architect"
+            / "projects" / (key + ".json")
+        )
+        state.parent.mkdir(parents=True)
+        state.write_text(json.dumps({"schema_version": "1.0", "applied_operation_ids": ["OP-1"]}))
+        first = self.run_inventory()
+        self.assertEqual(first["previous_state"]["applied_operation_ids"], ["OP-1"])
+        state.write_text(json.dumps({"schema_version": "1.0", "applied_operation_ids": ["OP-2"]}))
+        second = self.run_inventory()
+        self.assertNotEqual(first["inventory_fingerprint"], second["inventory_fingerprint"])
+
     def test_codex_override_wins_and_fallback_is_supported(self):
         (self.project / "AGENTS.override.md").write_text(
             "- 必须采用 override。\n"
@@ -196,6 +214,44 @@ class RuleInventoryTest(unittest.TestCase):
             error["code"] == "memory_not_found"
             for error in data["source_errors"]
         ))
+
+    def test_hook_artifact_ownership_and_health_are_discovered_statically(self):
+        hooks = self.home / ".claude" / "hooks"
+        hooks.mkdir(parents=True)
+        managed = hooks / "managed.py"
+        managed.write_text(
+            "# rules-architect-id: R-managed\n"
+            "# rules-architect-owner: rules-architect\n"
+            "REMINDER = '不要跳过测试'\n"
+        )
+        modified = hooks / "modified.py"
+        modified.write_text("# rules-architect-owner: rules-architect\nREMINDER = 'changed'\n")
+        external = hooks / "external.py"
+        external.write_text(
+            "# generated-by: other-tool\n"
+            "raise RuntimeError('扫描器绝不能执行此文件')\n"
+        )
+        (self.home / ".claude" / ".rules-architect-manifest.json").write_text(
+            json.dumps({"installed_files": [
+                {"path": str(managed), "hash_sha256": hashlib.sha256(managed.read_bytes()).hexdigest()},
+                {"path": str(modified), "hash_sha256": "0" * 64},
+            ]})
+        )
+        data = self.run_inventory()
+        by_name = {
+            Path(item["path"]).name: item
+            for item in data["hook_artifacts"] if item.get("path")
+        }
+        self.assertEqual(by_name["managed.py"]["ownership"], "rules_architect")
+        self.assertEqual(by_name["managed.py"]["status"], "orphan")
+        self.assertTrue(by_name["managed.py"]["safe_to_modify"])
+        self.assertEqual(by_name["modified.py"]["status"], "modified_orphan")
+        self.assertFalse(by_name["modified.py"]["safe_to_modify"])
+        self.assertEqual(by_name["external.py"]["ownership"], "external_tool")
+        self.assertEqual(by_name["missing.py"]["status"], "dangling_registration")
+        path_rules = {Path(item["path"]).name: item for item in data["path_rule_artifacts"]}
+        self.assertIn("proto.md", path_rules)
+        self.assertEqual(path_rules["proto.md"]["ownership"], "unknown")
 
 
 if __name__ == "__main__":

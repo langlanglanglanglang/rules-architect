@@ -95,7 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # Pin to a specific tag
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.4.0
 ```
 
 ### Or manual Claude Code install (more transparent)
@@ -132,9 +132,11 @@ Running `/rules-architect` in Claude Code or `$rules-architect` in Codex
 (also selectable through `/skills`) makes the main agent:
 
 1. build a current-project inventory with `scripts/rule_inventory.py`;
-2. choose a canonical body, delivery adapters, and enforcement mode;
-3. validate full coverage with `recommendation_contract.py`;
-4. render the five groups with `render_distribution.py`.
+2. discover registered, orphaned, dangling, and locally modified hooks;
+3. choose a canonical body, delivery adapters, and enforcement mode;
+4. reconcile against private prior state as create/reuse/update/disable/delete/keep/review;
+5. validate coverage, ownership, and fingerprint binding;
+6. render the five groups and actual hook health.
 
 The user still performs one Skill invocation. The current session's main agent
 supplies semantic classification; the Python tools only discover, validate,
@@ -144,6 +146,10 @@ understanding.
 Hooks are labeled `block` or `remind`.
 Only a deterministically testable pre-action block is called enforcement;
 existing `additionalContext` hooks are reminders.
+
+Repeated runs are intentional. Hooks produced by other tools are included in
+comparison but are never automatically modified. Applying remains read-only by
+default and requires an explicit `apply_reconciliation.py --yes` confirmation.
 
 Example output shape:
 

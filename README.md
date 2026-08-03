@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # 指定 tag 版本
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.3.0
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.4.0
 ```
 
 ### 或者手动装 Claude Code（更透明）
@@ -130,9 +130,11 @@ $rules-architect
 `$rules-architect`（也可从 `/skills` 选择）时，主代理默认：
 
 1. 用 `scripts/rule_inventory.py` 建立当前项目候选清单
-2. 对每条候选选择唯一正文、加载适配器和 enforcement 模式
-3. 用 `recommendation_contract.py` 校验没有漏项或旧报告
-4. 用 `render_distribution.py` 输出五组建议
+2. 同时扫描已注册、孤立、失效和本地修改过的 Hook，并识别所有权
+3. 对每条候选选择唯一正文、加载适配器和 enforcement 模式
+4. 结合上次私有状态，给出新增、复用、修改、禁用、删除、保留或复核建议
+5. 用 `recommendation_contract.py` 校验没有漏项、越权修改或旧报告
+6. 用 `render_distribution.py` 输出五组建议和 Hook 实际状态
 
 对用户来说入口仍然只有一次 Skill 调用。语义分类由当前会话的主代理
 完成；Python 工具只负责确定性扫描、校验和渲染，不声称能够脱离模型独立
@@ -141,6 +143,11 @@ $rules-architect
 Hook 会明确标注“阻断”（`block`）或“提醒”（`remind`）。
 只有动作发生前能够确定性验证并阻断的 Hook 才会标成强制；现有
 `additionalContext` Hook 属于提醒。
+
+重复运行是预期用法：第一次通常以“创建”为主；之后会根据实际文件、Manifest
+所有权和上次状态收敛为增删改建议。其他工具或用户创建的 Hook 会被纳入比较，
+但不会自动改写；只有 rules-architect 托管且哈希未变化的产物才可进入安全应用。
+报告默认只读，用户明确确认后才可用 `scripts/apply_reconciliation.py --yes` 执行。
 
 输出形态示例：
 

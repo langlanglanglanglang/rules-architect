@@ -17,9 +17,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    from .state_store import default_state_path
+except (ImportError, ValueError):
+    from state_store import default_state_path
 
-SCHEMA_VERSION = "1.0"
-SKILL_VERSION = "2.4.0-dev"
+
+SCHEMA_VERSION = "1.1"
+SKILL_VERSION = "2.4.0"
 DEFAULT_MAX_FILE_BYTES = 256 * 1024
 DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_FILES = 200
@@ -42,6 +47,18 @@ SECRET_PATTERNS = [
         r"(\s*[:=]\s*)([^\s,;]+)"
     ),
 ]
+RULE_ID_RE = re.compile(
+    r"(?im)^\s*(?:#|//|<!--)\s*rules-architect-id\s*:\s*"
+    r"([A-Za-z0-9._:-]+)"
+)
+OWNER_RE = re.compile(
+    r"(?im)^\s*(?:#|//|<!--)\s*rules-architect-owner\s*:\s*"
+    r"([A-Za-z0-9._:-]+)"
+)
+GENERATOR_RE = re.compile(
+    r"(?im)^\s*(?:#|//|<!--)?\s*(?:generated|installed)(?:\s+|-)?by\s*:?\s*"
+    r"([^\n>]+)"
+)
 
 
 def sha256_text(text):
@@ -129,6 +146,29 @@ def compute_inventory_fingerprint(data):
             for c in data.get("rule_candidates", [])
         ],
         "hooks": data.get("hook_registrations", []),
+        "hook_artifacts": [
+            {
+                "artifact_id": a["artifact_id"],
+                "path": a.get("path"),
+                "command": a.get("command"),
+                "content_hash": a.get("content_hash"),
+                "status": a["status"],
+                "ownership": a["ownership"],
+                "registrations": a.get("registrations", []),
+            }
+            for a in data.get("hook_artifacts", [])
+        ],
+        "path_rule_artifacts": [
+            {
+                "artifact_id": a["artifact_id"],
+                "path": a["path"],
+                "content_hash": a.get("content_hash"),
+                "status": a["status"],
+                "ownership": a["ownership"],
+            }
+            for a in data.get("path_rule_artifacts", [])
+        ],
+        "previous_state_hash": data.get("previous_state_hash"),
     }
     return sha256_text(json.dumps(
         payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
@@ -233,9 +273,29 @@ def extract_python_reminder(text):
     return None
 
 
+def extract_artifact_metadata(text):
+    """Read provenance markers without executing the artifact."""
+    rule = RULE_ID_RE.search(text)
+    owner = OWNER_RE.search(text)
+    generator = GENERATOR_RE.search(text)
+    lowered = text.lower()
+    legacy_ra = (
+        "by rules-architect skill" in lowered
+        or "installed by rules-architect" in lowered
+        or "由 rules-architect" in lowered
+    )
+    return {
+        "rule_id": rule.group(1) if rule else None,
+        "declared_owner": owner.group(1) if owner else None,
+        "generator": generator.group(1).strip() if generator else None,
+        "legacy_rules_architect_marker": legacy_ra,
+    }
+
+
 class InventoryBuilder:
     def __init__(self, project_root, platforms, memory_dir, lessons_path,
-                 max_file_bytes, max_total_bytes, max_files, redact_secrets):
+                 max_file_bytes, max_total_bytes, max_files, redact_secrets,
+                 state_path=None):
         self.project_root = project_root.resolve()
         self.repo_root = git_root(self.project_root)
         self.platforms = platforms
@@ -245,10 +305,13 @@ class InventoryBuilder:
         self.max_total_bytes = max_total_bytes
         self.max_files = max_files
         self.redact_secrets = redact_secrets
+        self.state_path = Path(state_path).expanduser() if state_path else None
         self.total_bytes = 0
         self.sources = []
         self.candidates = []
         self.hook_registrations = []
+        self.hook_artifacts = []
+        self.path_rule_artifacts = []
         self.source_errors = []
         self.skipped = []
         self._source_keys = set()
@@ -258,6 +321,29 @@ class InventoryBuilder:
             self.repo_root.resolve(),
             (Path.home() / ".claude").resolve(),
         }
+        self.manifest_path = Path(
+            (os.environ.get("RULES_ARCHITECT_MANIFEST") or "").strip()
+            or (Path.home() / ".claude" / ".rules-architect-manifest.json")
+        )
+        self.manifest = self._load_json_object(
+            self.manifest_path, "manifest_unreadable"
+        )
+        self.previous_state = self._load_json_object(
+            self.state_path, "state_unreadable"
+        ) if self.state_path else {}
+
+    def _load_json_object(self, path, code):
+        if not path or not Path(path).is_file():
+            return {}
+        try:
+            value = json.loads(Path(path).read_text())
+        except (OSError, ValueError) as exc:
+            self.error(path, code, str(exc))
+            return {}
+        if not isinstance(value, dict):
+            self.error(path, code, "根节点必须是 JSON 对象")
+            return {}
+        return value
 
     def error(self, path, code, message):
         self.source_errors.append({
@@ -728,12 +814,17 @@ class InventoryBuilder:
                         ),
                         "config_path": source["path"],
                     }
-                    self.hook_registrations.append(registration)
                     script_path = self.command_script_path(command)
                     reminder = None
                     if script_path:
                         if not script_path.is_absolute():
                             script_path = self.project_root / script_path
+                        try:
+                            script_path = script_path.resolve()
+                        except OSError:
+                            script_path = script_path.absolute()
+                        registration["script_path"] = str(script_path)
+                        registration["script_exists"] = script_path.is_file()
                         script_source = self.add_source(
                             script_path, "hook_script", platform, scope
                         )
@@ -741,6 +832,10 @@ class InventoryBuilder:
                             reminder = extract_python_reminder(
                                 self.source_text(script_source)
                             )
+                    else:
+                        registration["script_path"] = None
+                        registration["script_exists"] = None
+                    self.hook_registrations.append(registration)
                     hook_text = (
                         reminder["text"]
                         if reminder else
@@ -774,6 +869,276 @@ class InventoryBuilder:
                 return Path(token.strip("'\"")).expanduser()
         return None
 
+    def _manifest_hook_files(self):
+        out = {}
+        for key, platform in (
+            ("installed_files", "claude"),
+            ("codex_installed_files", "codex"),
+        ):
+            for entry in self.manifest.get(key, []):
+                if not isinstance(entry, dict) or not entry.get("path"):
+                    continue
+                path = Path(entry["path"]).expanduser()
+                try:
+                    resolved = str(path.resolve())
+                except OSError:
+                    resolved = str(path.absolute())
+                if path.suffix != ".py" and "hook" not in entry.get("kind", ""):
+                    continue
+                record = dict(entry)
+                record["platform"] = platform
+                out[resolved] = record
+        return out
+
+    def _manifest_entry_for_path(self, path):
+        target = str(Path(path).expanduser().resolve())
+        for key in ("installed_files", "codex_installed_files"):
+            for entry in self.manifest.get(key, []):
+                if not isinstance(entry, dict) or not entry.get("path"):
+                    continue
+                try:
+                    candidate = str(Path(entry["path"]).expanduser().resolve())
+                except OSError:
+                    candidate = str(Path(entry["path"]).expanduser().absolute())
+                if candidate == target:
+                    return entry
+        return None
+
+    def discover_path_rule_artifacts(self):
+        artifacts = []
+        seen = set()
+        for source in self.sources:
+            if source.get("kind") != "path_rule" or source["path"] in seen:
+                continue
+            seen.add(source["path"])
+            path = Path(source["path"])
+            text = self.source_text(source)
+            manifest_entry = self._manifest_entry_for_path(path)
+            rule_match = re.search(
+                r"(?im)^\s*rules_architect_id\s*:\s*([A-Za-z0-9._:-]+)", text
+            )
+            owner_match = re.search(
+                r"(?im)^\s*rules_architect_owner\s*:\s*([A-Za-z0-9._:-]+)", text
+            )
+            managed_hash = manifest_entry.get("hash_sha256") if manifest_entry else None
+            modified = bool(managed_hash and managed_hash != source["content_hash"])
+            if manifest_entry:
+                ownership, evidence = "rules_architect", "manifest"
+            elif owner_match and owner_match.group(1) == "rules-architect":
+                ownership, evidence = "rules_architect", "frontmatter_marker_untracked"
+            else:
+                ownership, evidence = "unknown", "none"
+            artifacts.append({
+                "artifact_id": "P-" + sha256_text(source["path"])[:16],
+                "kind": "path_rule",
+                "path": source["path"],
+                "platforms": [source["platform"]],
+                "scopes": [source["scope"]],
+                "registrations": [],
+                "registered": None,
+                "exists": True,
+                "symlink": path.is_symlink(),
+                "status": "modified" if modified else "active",
+                "ownership": ownership,
+                "ownership_evidence": evidence,
+                "safe_to_modify": bool(manifest_entry and not modified and not path.is_symlink()),
+                "content_hash": source["content_hash"],
+                "managed_hash": managed_hash,
+                "modified_since_managed": modified,
+                "rule_id": (rule_match.group(1) if rule_match else None) or (manifest_entry or {}).get("rule_id"),
+                "generator": None,
+            })
+        self.path_rule_artifacts = sorted(artifacts, key=lambda item: item["path"])
+
+    def _hook_directories(self):
+        home = Path.home()
+        directories = []
+        if "claude" in self.platforms:
+            directories.append((home / ".claude" / "hooks", "claude", "user"))
+            for directory in ancestors_to(self.project_root):
+                if directory != home:
+                    directories.append(
+                        (directory / ".claude" / "hooks", "claude", "project")
+                    )
+        if "codex" in self.platforms:
+            codex_home = Path(
+                os.environ.get("CODEX_HOME") or (home / ".codex")
+            )
+            directories.append((codex_home / "hooks", "codex", "user"))
+        return directories
+
+    def discover_hook_artifacts(self):
+        """Inventory registered, orphaned and dangling Hook artifacts.
+
+        Hook code is always treated as data. This method reads bounded files
+        through add_source/extract_python_reminder and never imports or runs
+        an artifact.
+        """
+        manifest_files = self._manifest_hook_files()
+        discovered = {}
+
+        def record_path(path, platform, scope):
+            path = Path(path).expanduser()
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path.absolute()
+            key = str(resolved)
+            item = discovered.setdefault(key, {
+                "path": key,
+                "platforms": set(),
+                "scopes": set(),
+                "registrations": [],
+                "exists": resolved.is_file(),
+                "symlink": resolved.is_symlink() or path.is_symlink(),
+            })
+            item["platforms"].add(platform)
+            item["scopes"].add(scope)
+            return item
+
+        for directory, platform, scope in self._hook_directories():
+            if not directory.is_dir():
+                continue
+            try:
+                paths = sorted(directory.glob("*.py"))
+            except OSError as exc:
+                self.error(directory, "hook_dir_unreadable", str(exc))
+                continue
+            for path in paths:
+                record_path(path, platform, scope)
+
+        for registration in self.hook_registrations:
+            script_path = registration.get("script_path")
+            if script_path:
+                item = record_path(
+                    script_path,
+                    registration["platform"],
+                    "registered",
+                )
+                item["registrations"].append(registration)
+            else:
+                key = "command:" + sha256_text(json.dumps(
+                    registration, ensure_ascii=False, sort_keys=True
+                ))[:16]
+                discovered[key] = {
+                    "path": None,
+                    "command": registration.get("command"),
+                    "platforms": {registration["platform"]},
+                    "scopes": {"registered"},
+                    "registrations": [registration],
+                    "exists": None,
+                    "symlink": False,
+                }
+
+        for path, entry in manifest_files.items():
+            item = record_path(path, entry["platform"], "manifest")
+            item["manifest_entry"] = entry
+
+        artifacts = []
+        for key, raw in discovered.items():
+            path = raw.get("path")
+            manifest_entry = raw.get("manifest_entry") or manifest_files.get(path)
+            source = None
+            text = ""
+            content_hash = None
+            reminder = None
+            metadata = {
+                "rule_id": None,
+                "declared_owner": None,
+                "generator": None,
+                "legacy_rules_architect_marker": False,
+            }
+            if path and raw["exists"] and not raw["symlink"]:
+                platform = sorted(raw["platforms"])[0]
+                scope = sorted(raw["scopes"])[0]
+                source = self.add_source(path, "hook_script", platform, scope)
+                if source:
+                    text = self.source_text(source)
+                    content_hash = source["content_hash"]
+                    reminder = extract_python_reminder(text)
+                    metadata = extract_artifact_metadata(text)
+
+            if manifest_entry:
+                ownership = "rules_architect"
+                ownership_evidence = "manifest"
+            elif metadata.get("declared_owner") == "rules-architect" or metadata.get(
+                "legacy_rules_architect_marker"
+            ):
+                ownership = "rules_architect"
+                ownership_evidence = "file_marker_untracked"
+            elif metadata.get("generator"):
+                ownership = "external_tool"
+                ownership_evidence = "generator_marker"
+            else:
+                ownership = "unknown"
+                ownership_evidence = "none"
+
+            registered = bool(raw["registrations"])
+            exists = raw["exists"]
+            managed_hash = manifest_entry.get("hash_sha256") if manifest_entry else None
+            modified = bool(
+                managed_hash and content_hash and managed_hash != content_hash
+            )
+            if raw["symlink"]:
+                status = "symlink"
+            elif registered and exists is False:
+                status = "dangling_registration"
+            elif registered and exists is None:
+                status = "registered_command"
+            elif registered and modified:
+                status = "modified"
+            elif registered:
+                status = "active"
+            elif exists and modified:
+                status = "modified_orphan"
+            elif exists:
+                status = "orphan"
+            else:
+                status = "missing"
+
+            artifact_key = path or raw.get("command") or key
+            artifact = {
+                "artifact_id": "H-" + sha256_text(artifact_key)[:16],
+                "kind": "hook",
+                "path": path,
+                "command": raw.get("command"),
+                "platforms": sorted(raw["platforms"]),
+                "scopes": sorted(raw["scopes"]),
+                "registrations": raw["registrations"],
+                "registered": registered,
+                "exists": exists,
+                "symlink": raw["symlink"],
+                "status": status,
+                "ownership": ownership,
+                "ownership_evidence": ownership_evidence,
+                "safe_to_modify": bool(
+                    manifest_entry and exists and not modified and not raw["symlink"]
+                ),
+                "content_hash": content_hash,
+                "managed_hash": managed_hash,
+                "modified_since_managed": modified,
+                "rule_id": (
+                    metadata.get("rule_id")
+                    or (manifest_entry or {}).get("rule_id")
+                ),
+                "generator": metadata.get("generator"),
+                "analysis": {
+                    "mode": "static_reminder" if reminder else "opaque",
+                    "confidence": "high" if reminder else "low",
+                    "reminder": (
+                        redact(reminder["text"])
+                        if reminder and self.redact_secrets else
+                        (reminder["text"] if reminder else None)
+                    ),
+                },
+            }
+            artifacts.append(artifact)
+
+        artifacts.sort(key=lambda a: (
+            a["platforms"], a.get("path") or "", a["artifact_id"]
+        ))
+        self.hook_artifacts = artifacts
+
     def discover_lessons(self):
         value = self.lessons_path or os.environ.get("LESSONS_PATH")
         if value:
@@ -794,6 +1159,8 @@ class InventoryBuilder:
         if "codex" in self.platforms:
             self.discover_codex()
         self.discover_lessons()
+        self.discover_path_rule_artifacts()
+        self.discover_hook_artifacts()
         self.sources.sort(key=lambda s: (
             s["platform"], s["scope"], s["kind"], s["path"]
         ))
@@ -803,6 +1170,14 @@ class InventoryBuilder:
         self.hook_registrations.sort(key=lambda h: (
             h["platform"], h["event"], str(h["matcher"]), h["command"]
         ))
+        previous_state_hash = (
+            sha256_text(json.dumps(
+                self.previous_state,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )) if self.previous_state else None
+        )
         report = {
             "schema_version": SCHEMA_VERSION,
             "tool_version": SKILL_VERSION,
@@ -810,6 +1185,16 @@ class InventoryBuilder:
             "repo_root": str(self.repo_root),
             "platforms": sorted(self.platforms),
             "inventory_fingerprint": "",
+            "state_path": str(self.state_path) if self.state_path else None,
+            "inputs": {
+                "memory_dir": str(self.memory_dir) if self.memory_dir else None,
+                "lessons_path": str(self.lessons_path) if self.lessons_path else None,
+                "max_file_bytes": self.max_file_bytes,
+                "max_total_bytes": self.max_total_bytes,
+                "redact_secrets": self.redact_secrets,
+            },
+            "previous_state_hash": previous_state_hash,
+            "previous_state": self.previous_state,
             "limits": {
                 "max_files": self.max_files,
                 "max_file_bytes": self.max_file_bytes,
@@ -819,6 +1204,20 @@ class InventoryBuilder:
                 "sources": len(self.sources),
                 "rule_candidates": len(self.candidates),
                 "hook_registrations": len(self.hook_registrations),
+                "hook_artifacts": len(self.hook_artifacts),
+                "path_rule_artifacts": len(self.path_rule_artifacts),
+                "hook_orphans": sum(
+                    1 for item in self.hook_artifacts
+                    if item["status"] in {"orphan", "modified_orphan"}
+                ),
+                "hook_dangling": sum(
+                    1 for item in self.hook_artifacts
+                    if item["status"] == "dangling_registration"
+                ),
+                "hook_modified": sum(
+                    1 for item in self.hook_artifacts
+                    if item["modified_since_managed"]
+                ),
                 "source_errors": len(self.source_errors),
                 "skipped": len(self.skipped),
                 "scanned_bytes": self.total_bytes,
@@ -826,6 +1225,8 @@ class InventoryBuilder:
             "sources": self.sources,
             "rule_candidates": self.candidates,
             "hook_registrations": self.hook_registrations,
+            "hook_artifacts": self.hook_artifacts,
+            "path_rule_artifacts": self.path_rule_artifacts,
             "source_errors": sorted(
                 self.source_errors,
                 key=lambda e: (str(e.get("path")), e["code"]),
@@ -849,6 +1250,14 @@ def parse_args():
     parser.add_argument("--memory-dir")
     parser.add_argument("--lessons-path")
     parser.add_argument(
+        "--state-path",
+        help="项目状态快照路径（默认使用私有的跨平台状态目录）",
+    )
+    parser.add_argument(
+        "--no-state", action="store_true",
+        help="不读取上次运行的状态快照",
+    )
+    parser.add_argument(
         "--platform", choices=["claude", "codex", "both"], default="both"
     )
     parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES)
@@ -870,6 +1279,9 @@ def main():
         print("项目根目录必须是已存在的目录", file=sys.stderr)
         return 2
     platforms = {"claude", "codex"} if args.platform == "both" else {args.platform}
+    state_path = None
+    if not args.no_state:
+        state_path = args.state_path or str(default_state_path(project_root))
     builder = InventoryBuilder(
         project_root=project_root,
         platforms=platforms,
@@ -879,6 +1291,7 @@ def main():
         max_total_bytes=max(1, args.max_total_bytes),
         max_files=max(1, args.max_files),
         redact_secrets=not args.no_redact_secrets,
+        state_path=state_path,
     )
     report = builder.build()
     rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"

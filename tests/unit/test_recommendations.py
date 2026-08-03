@@ -159,6 +159,36 @@ class RecommendationContractTest(unittest.TestCase):
         errors = validate_recommendations(data, self.inventory())
         self.assertTrue(any("必须是非空字符串" in error for error in errors))
 
+    def test_schema_11_requires_decision_for_every_hook_artifact(self):
+        inventory = self.inventory()
+        inventory["schema_version"] = "1.1"
+        inventory["hook_artifacts"] = [{
+            "artifact_id": "H-external", "path": "/repo/external.py",
+            "status": "orphan", "ownership": "external_tool",
+            "registrations": [], "content_hash": "c" * 64,
+        }]
+        inventory["path_rule_artifacts"] = []
+        inventory["inventory_fingerprint"] = compute_inventory_fingerprint(inventory)
+        data = self.recommendations()
+        data["schema_version"] = "1.1"
+        data["inventory_fingerprint"] = inventory["inventory_fingerprint"]
+        errors = validate_recommendations(data, inventory)
+        self.assertTrue(any("尚未决策的规则产物" in error for error in errors))
+        data["artifact_decisions"] = [{
+            "artifact_id": "H-external", "action": "delete",
+            "reason": "误判", "confidence": "low",
+        }]
+        errors = validate_recommendations(data, inventory)
+        self.assertTrue(any("只能保留、复用或复核" in error for error in errors))
+        data["artifact_decisions"][0]["action"] = "reuse"
+        data["operations"] = [{
+            "operation_id": "OP-delete-external", "action": "delete",
+            "artifact_id": "H-external", "expected_hash": "c" * 64,
+            "reason": "不应允许", "requires_confirmation": True,
+        }]
+        errors = validate_recommendations(data, inventory)
+        self.assertTrue(any("不得修改外部或未知所有权产物" in error for error in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

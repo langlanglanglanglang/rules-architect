@@ -338,11 +338,11 @@ This skill **never modifies your existing content** without explicit consent. Al
 `~/.claude/.rules-architect-manifest.json` tracks every installed file:
 ```json
 {
-  "skill_version": "2.4.0-dev",
+  "skill_version": "2.4.0",
   "installed_at": "2026-06-12T...",
   "installed_files": [
     {"path": "~/.claude/hooks/memory_intake_check.py",
-     "hash_sha256": "sha256...", "owner": "rules-architect", "template_version": "2.4.0-dev"}
+     "hash_sha256": "sha256...", "owner": "rules-architect", "template_version": "2.4.0"}
   ],
   "settings_hooks_added": [
     {"event": "PreToolUse", "matcher": "Write|Edit|MultiEdit",

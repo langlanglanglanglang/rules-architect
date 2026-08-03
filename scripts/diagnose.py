@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "1.0.0"
+SKILL_VERSION = "2.4.0"
 
 
 # === Platform abstraction ===

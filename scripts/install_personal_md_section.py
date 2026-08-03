@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "1.0.0"
+SKILL_VERSION = "2.4.0"
 MARKER_BEGIN = "<!-- rules-architect:section-6 BEGIN -->"
 MARKER_END = "<!-- rules-architect:section-6 END -->"
 
