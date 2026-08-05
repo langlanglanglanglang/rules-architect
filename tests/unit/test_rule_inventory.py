@@ -24,6 +24,8 @@ class RuleInventoryTest(unittest.TestCase):
         (self.project / "AGENTS.md").write_text(
             "# Team password=heading-secret\n\n"
             "- 必须运行测试。\n"
+            "提交信息使用中文。\n\n"
+            "| 文件 | 语言 |\n| --- | --- |\n| README | 中文 |\n"
             "```text\n"
             "- 必须忽略代码块里的示例。\n"
             "```\n"
@@ -66,6 +68,7 @@ class RuleInventoryTest(unittest.TestCase):
             "---\ndescription: old\n---\n"
             "Promoted to: AGENTS.md @ 2026-01-01\n"
         )
+        (memory / "conventions.md").write_text("Never push main.\n")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -106,6 +109,14 @@ class RuleInventoryTest(unittest.TestCase):
         self.assertTrue(any("运行测试" in text for text in texts))
         self.assertTrue(any("字段编号必须递增" in text for text in texts))
         self.assertTrue(any("回答应该简洁" in text for text in texts))
+        self.assertTrue(any("提交信息使用中文" in text for text in texts))
+        self.assertTrue(any("README | 中文" in text for text in texts))
+        self.assertTrue(any("Never push main" in text for text in texts))
+        self.assertTrue(any(
+            source["kind"] == "memory_topic"
+            and source["path"].endswith("conventions.md")
+            for source in data["sources"]
+        ))
         self.assertFalse(any("忽略代码块" in text for text in texts))
         self.assertFalse(any("泄露外部规则" in text for text in texts))
         self.assertFalse(any(text.startswith("Promoted to:") for text in texts))

@@ -65,11 +65,11 @@ L0 Hook 与 L2 路径规则更接近相关动作或文件，但 `additionalConte
 ```bash
 # 预览
 python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push \
-  --feedback feedback_xxx --dry-run
+  --feedback feedback_xxx --memory-dir <已确认的-memory-目录> --dry-run
 
 # 写入
 python3 ~/.claude/skills/rules-architect/scripts/memory_sync.py push \
-  --feedback feedback_xxx --reason "..."
+  --feedback feedback_xxx --memory-dir <已确认的-memory-目录> --reason "..."
 ```
 
 只允许单向推送，不反向拉取：Memory 是单条经验，Lessons 是按主题聚合的多人文档，

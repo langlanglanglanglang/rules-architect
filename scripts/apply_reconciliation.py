@@ -7,14 +7,17 @@ import os
 import sys
 import tempfile
 import time
+import stat
 from pathlib import Path
 
 try:
     from .recommendation_contract import validate_recommendations
+    from .recovery_archive import RecoveryArchive
     from .rule_inventory import InventoryBuilder
     from .state_store import atomic_private_write, default_state_path, state_root
 except (ImportError, ValueError):
     from recommendation_contract import validate_recommendations
+    from recovery_archive import RecoveryArchive
     from rule_inventory import InventoryBuilder
     from state_store import atomic_private_write, default_state_path, state_root
 
@@ -119,11 +122,13 @@ def remove_exact_registration(config, registration):
 
 def same_registration(left, right):
     return all(left.get(key) == right.get(key) for key in (
-        "config_path", "event", "matcher", "command"
+        "platform", "config_path", "event", "matcher", "command"
     ))
 
 
 def same_manifest_registration(left, right):
+    if "config_path" in left or "platform" in left:
+        return same_registration(left, right)
     return all(left.get(key) == right.get(key) for key in (
         "event", "matcher", "command"
     ))
@@ -140,8 +145,58 @@ def add_exact_registration(config, registration):
                 return False
             entry.setdefault("hooks", []).append({"type": "command", "command": command})
             return True
-    entries.append({"matcher": matcher, "hooks": [{"type": "command", "command": command}]})
+    new_entry = {"hooks": [{"type": "command", "command": command}]}
+    if matcher is not None:
+        new_entry["matcher"] = matcher
+    entries.append(new_entry)
     return True
+
+
+def snapshot_paths(paths):
+    snapshots = {}
+    for path in paths:
+        path = Path(path)
+        if path in snapshots:
+            continue
+        if path.is_symlink():
+            raise ValueError("拒绝为事务快照符号链接：{}".format(path))
+        if path.is_file():
+            snapshots[path] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        else:
+            snapshots[path] = None
+    return snapshots
+
+
+def restore_snapshots(snapshots):
+    failures = []
+    for path, snapshot in reversed(list(snapshots.items())):
+        try:
+            if snapshot is None:
+                if path.exists() and path.is_file():
+                    path.unlink()
+                continue
+            content, mode = snapshot
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(
+                prefix=path.name + ".rollback.", suffix=".tmp", dir=str(path.parent)
+            )
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.chmod(temporary, mode)
+                os.replace(temporary, str(path))
+            except Exception:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+                raise
+        except Exception as exc:
+            failures.append("{}: {}".format(path, exc))
+    if failures:
+        raise RuntimeError("回滚失败：{}".format("；".join(failures)))
 
 
 def mutate_config(config_path, callback):
@@ -230,6 +285,16 @@ def apply_plan(
         ]
     else:
         operations = list(all_operations)
+    if selected_operation_ids or selected_actions:
+        selected_ids = {operation["operation_id"] for operation in operations}
+        for recommendation in plan.get("recommendations", []):
+            bound = set(recommendation.get("operation_ids", []))
+            if bound & selected_ids and not bound <= selected_ids:
+                raise ValueError(
+                    "推荐 {} 包含不可拆分的操作：{}".format(
+                        recommendation.get("rule_id"), ", ".join(sorted(bound))
+                    )
+                )
     if (selected_operation_ids or selected_actions) and not operations:
         raise ValueError("所选条件没有匹配任何可执行操作")
     if not operations:
@@ -306,172 +371,222 @@ def apply_plan(
             "applied": 0,
         }
 
+    touched_paths = set(prepared_paths.values())
     for operation in operations:
-        action = operation["action"]
         artifact = artifacts.get(operation.get("artifact_id"))
-        path = prepared_paths[operation["operation_id"]]
+        registrations = list((artifact or {}).get("registrations", []))
+        registrations.extend(operation.get("registrations", []))
+        for registration in registrations:
+            touched_paths.add(validate_config_path(
+                registration["config_path"], Path(inventory["project_root"])
+            ))
+    touched_paths.update({manifest_path, state_path})
+    snapshots = snapshot_paths(touched_paths)
+    recovery_archive = RecoveryArchive(
+        purpose="reconciliation", manifest_path=manifest_path
+    )
 
-        if action == "create":
-            if path.exists() or path.is_symlink():
-                raise ValueError("创建目标已存在：{}".format(path))
-            atomic_write_text(
-                path, operation["content"],
-                executable=path.suffix.lower() in {
-                    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
-                    ".js", ".mjs", ".cjs", ".rb", ".pl"
-                },
-            )
-        elif action == "update":
-            atomic_write_text(
-                path, operation["content"],
-                executable=path.suffix.lower() in {
-                    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
-                    ".js", ".mjs", ".cjs", ".rb", ".pl"
-                },
-            )
-        elif action in {"disable", "delete"}:
-            for registration in artifact.get("registrations", []):
+    try:
+        for operation in operations:
+            action = operation["action"]
+            artifact = artifacts.get(operation.get("artifact_id"))
+            path = prepared_paths[operation["operation_id"]]
+
+            if action == "create":
+                if path.exists() or path.is_symlink():
+                    raise ValueError("创建目标已存在：{}".format(path))
+                atomic_write_text(
+                    path, operation["content"],
+                    executable=path.suffix.lower() in {
+                        ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+                        ".js", ".mjs", ".cjs", ".rb", ".pl"
+                    },
+                )
+            elif action == "update":
+                recovery_archive.backup_file(
+                    path, "artifact_update",
+                    expected_hash=operation.get("expected_hash"),
+                )
+                atomic_write_text(
+                    path, operation["content"],
+                    executable=path.suffix.lower() in {
+                        ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+                        ".js", ".mjs", ".cjs", ".rb", ".pl"
+                    },
+                )
+            elif action in {"disable", "delete"}:
+                for registration in artifact.get("registrations", []):
+                    config_path = validate_config_path(
+                        registration["config_path"], Path(inventory["project_root"])
+                    )
+                    if config_path.is_file():
+                        recovery_archive.backup_file(
+                            config_path, "hook_config_before_disable"
+                        )
+                    mutate_config(
+                        config_path,
+                        lambda config, r=registration: remove_exact_registration(config, r),
+                    )
+                    registration_key = (
+                        "codex_hooks_added"
+                        if registration.get("platform") == "codex"
+                        else "settings_hooks_added"
+                    )
+                    manifest.setdefault(registration_key, [])[:] = [
+                        entry for entry in manifest.get(registration_key, [])
+                        if not same_manifest_registration(entry, registration)
+                    ]
+                if action == "delete":
+                    recovery_archive.move_file(
+                        path, "artifact_delete",
+                        expected_hash=operation.get("expected_hash"),
+                    )
+
+            desired_registrations = operation.get("registrations", [])
+            if action == "update" and artifact:
+                for previous in artifact.get("registrations", []):
+                    if any(
+                        same_registration(previous, desired)
+                        for desired in desired_registrations
+                    ):
+                        continue
+                    config_path = validate_config_path(
+                        previous["config_path"], Path(inventory["project_root"])
+                    )
+                    if config_path.is_file():
+                        recovery_archive.backup_file(
+                            config_path, "hook_config_before_update"
+                        )
+                    mutate_config(
+                        config_path,
+                        lambda config, r=previous: remove_exact_registration(config, r),
+                    )
+                    registration_key = (
+                        "codex_hooks_added"
+                        if previous.get("platform") == "codex"
+                        else "settings_hooks_added"
+                    )
+                    manifest.setdefault(registration_key, [])[:] = [
+                        entry for entry in manifest.get(registration_key, [])
+                        if not same_manifest_registration(entry, previous)
+                    ]
+            for registration in (
+                desired_registrations if action in {"create", "update"} else []
+            ):
                 config_path = validate_config_path(
                     registration["config_path"], Path(inventory["project_root"])
                 )
-                mutate_config(
-                    config_path,
-                    lambda config, r=registration: remove_exact_registration(config, r),
-                )
-                registration_key = (
-                    "codex_hooks_added"
-                    if registration.get("platform") == "codex"
-                    else "settings_hooks_added"
-                )
-                manifest.setdefault(registration_key, [])[:] = [
-                    entry for entry in manifest.get(registration_key, [])
-                    if not (
-                        entry.get("event") == registration.get("event")
-                        and entry.get("matcher") == registration.get("matcher")
-                        and entry.get("command") == registration.get("command")
+                if config_path.is_file():
+                    recovery_archive.backup_file(
+                        config_path, "hook_config_before_registration"
                     )
-                ]
-            if action == "delete":
-                path.unlink()
-
-        desired_registrations = operation.get("registrations", [])
-        if action == "update" and artifact:
-            for previous in artifact.get("registrations", []):
-                if any(
-                    same_registration(previous, desired)
-                    for desired in desired_registrations
-                ):
-                    continue
-                config_path = validate_config_path(
-                    previous["config_path"], Path(inventory["project_root"])
-                )
                 mutate_config(
                     config_path,
-                    lambda config, r=previous: remove_exact_registration(config, r),
+                    lambda config, r=registration: add_exact_registration(config, r),
                 )
                 registration_key = (
                     "codex_hooks_added"
-                    if previous.get("platform") == "codex"
+                    if resolved(config_path).name == "hooks.json"
                     else "settings_hooks_added"
                 )
-                manifest.setdefault(registration_key, [])[:] = [
-                    entry for entry in manifest.get(registration_key, [])
-                    if not same_manifest_registration(entry, previous)
-                ]
-        for registration in (
-            desired_registrations if action in {"create", "update"} else []
-        ):
-            config_path = validate_config_path(
-                registration["config_path"], Path(inventory["project_root"])
+                tracked = manifest.setdefault(registration_key, [])
+                if not any(same_manifest_registration(entry, registration) for entry in tracked):
+                    tracked.append({
+                        "platform": registration["platform"],
+                        "config_path": registration["config_path"],
+                        "event": registration["event"],
+                        "matcher": registration.get("matcher"),
+                        "command": registration["command"],
+                        "owner": "rules-architect",
+                        "kind": "reconciliation",
+                    })
+
+            codex_root = resolved(
+                Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")) / "hooks"
             )
-            mutate_config(
-                config_path,
-                lambda config, r=registration: add_exact_registration(config, r),
+            manifest_key = (
+                "codex_installed_files" if codex_root in resolved(path).parents
+                else "installed_files"
             )
-            registration_key = (
-                "codex_hooks_added"
-                if resolved(config_path).name == "hooks.json"
-                else "settings_hooks_added"
-            )
-            tracked = manifest.setdefault(registration_key, [])
-            if not any(
-                entry.get("event") == registration["event"]
-                and entry.get("matcher") == registration["matcher"]
-                and entry.get("command") == registration["command"]
-                for entry in tracked
-            ):
-                tracked.append({
-                    "platform": registration["platform"],
-                    "config_path": registration["config_path"],
-                    "event": registration["event"],
-                    "matcher": registration["matcher"],
-                    "command": registration["command"],
+            if action in {"create", "update", "delete"}:
+                for key in ("installed_files", "codex_installed_files"):
+                    manifest.setdefault(key, [])[:] = [
+                        entry for entry in manifest.get(key, [])
+                        if entry.get("path") != str(path)
+                    ]
+            if action in {"create", "update"}:
+                entries = manifest.setdefault(manifest_key, [])
+                entries.append({
+                    "path": str(path),
+                    "hash_sha256": current_hash(path),
                     "owner": "rules-architect",
                     "kind": "reconciliation",
+                    "rule_id": operation.get("rule_id"),
+                    "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 })
+            applied.append(operation["operation_id"])
 
-        codex_root = resolved(Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")) / "hooks")
-        manifest_key = "codex_installed_files" if codex_root in resolved(path).parents else "installed_files"
-        if action in {"create", "update", "delete"}:
-            for key in ("installed_files", "codex_installed_files"):
-                manifest.setdefault(key, [])[:] = [
-                    entry for entry in manifest.get(key, []) if entry.get("path") != str(path)
-                ]
-        if action in {"create", "update"}:
-            entries = manifest.setdefault(manifest_key, [])
-            entries.append({
-                "path": str(path),
-                "hash_sha256": current_hash(path),
-                "owner": "rules-architect",
-                "kind": "reconciliation",
-                "rule_id": operation.get("rule_id"),
-                "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            })
-        applied.append(operation["operation_id"])
-
-    atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-    applied_rule_ids = {
-        operation.get("rule_id") for operation in operations
-        if operation.get("operation_id") in applied and operation.get("rule_id")
-    }
-    applied_details = [
-        {
-            "operation_id": operation["operation_id"],
-            "operation_digest": sha256_bytes(json.dumps(
-                operation, ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")),
-            "action": operation["action"],
-            "rule_id": operation.get("rule_id"),
-            "artifact_id": operation.get("artifact_id"),
-            "path": str(prepared_paths[operation["operation_id"]]),
+        recovery_summary = recovery_archive.summary()
+        if recovery_summary:
+            histories = manifest.setdefault("recovery_archives", [])
+            histories.append(recovery_summary)
+            manifest["recovery_archives"] = histories[-20:]
+        atomic_write_text(
+            manifest_path,
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        )
+        applied_rule_ids = {
+            operation.get("rule_id") for operation in operations
+            if operation.get("operation_id") in applied and operation.get("rule_id")
         }
-        for operation in operations
-        if operation["operation_id"] in applied
-    ]
-    history = list(previous_state.get("history", []))[-19:]
-    history.append({
-        "inventory_fingerprint": inventory["inventory_fingerprint"],
-        "operations": applied_details,
-        "applied_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    })
-    atomic_private_write(state_path, {
-        "schema_version": "1.1",
-        "project_root": inventory["project_root"],
-        "based_on_inventory_fingerprint": inventory["inventory_fingerprint"],
-        "applied_operation_ids": list(applied),
-        "rule_ids": sorted(applied_rule_ids),
-        "last_applied_operations": applied_details,
-        "history": history,
-        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    })
-    return {
+        applied_details = [
+            {
+                "operation_id": operation["operation_id"],
+                "operation_digest": sha256_bytes(json.dumps(
+                    operation, ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")),
+                "action": operation["action"],
+                "rule_id": operation.get("rule_id"),
+                "artifact_id": operation.get("artifact_id"),
+                "path": str(prepared_paths[operation["operation_id"]]),
+            }
+            for operation in operations
+            if operation["operation_id"] in applied
+        ]
+        history = list(previous_state.get("history", []))[-19:]
+        history.append({
+            "inventory_fingerprint": inventory["inventory_fingerprint"],
+            "operations": applied_details,
+            "applied_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        })
+        atomic_private_write(state_path, {
+            "schema_version": "1.1",
+            "project_root": inventory["project_root"],
+            "based_on_inventory_fingerprint": inventory["inventory_fingerprint"],
+            "applied_operation_ids": list(applied),
+            "rule_ids": sorted(applied_rule_ids),
+            "last_applied_operations": applied_details,
+            "history": history,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        })
+    except Exception as exc:
+        try:
+            restore_snapshots(snapshots)
+        except Exception as rollback_exc:
+            raise RuntimeError("应用失败：{}；{}".format(exc, rollback_exc))
+        raise
+    result = {
         "mode": "apply",
         "operations": len(operations),
         "selected_operation_ids": applied,
         "applied": len(applied),
         "state_path": str(state_path),
     }
+    recovery_summary = recovery_archive.summary()
+    if recovery_summary:
+        result["recovery_archive"] = recovery_summary["path"]
+    return result
 
 
 def comma_separated(values):

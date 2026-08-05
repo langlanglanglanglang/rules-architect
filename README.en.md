@@ -85,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
   bash -s -- --platforms codex
 
-# Diagnose only
+# Diagnose only: temporary checkout, cleaned automatically; installs nothing
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
 
 # Full install (hooks + rule-intake + §六)
@@ -95,7 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # Pin to a specific tag
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.4.0
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.5.0
 ```
 
 ### Or manual Claude Code install (more transparent)
@@ -159,8 +159,9 @@ default and requires an explicit `apply_reconciliation.py --yes` confirmation.
 The final menu supports all safe operations, selected operation IDs,
 create-only execution, plan adjustment, export, rescan, and exit. Updates,
 disables, and deletes receive a second confirmation before execution. Execution
-choices are hidden when no operation exists. Partial selection applies explicit
-independent operations and records only successful operations. Moves and
+choices are hidden when no operation exists. Partial selection records only
+successful operations. Operations bound to the same recommendation are
+indivisible, preventing a half-installed Hook. Moves and
 unsupported document/memory writes remain manual rather than pretending to be
 transactional.
 
@@ -171,7 +172,10 @@ same artifact.
 Preview and apply use the same path/config/state/hash preflight; legacy schemas
 are view-only, and writes require a schema 1.2 ready plan. Automatic Hook writes
 also require a complete desired registration set and content markers bound to
-the final enforcement specification.
+the final enforcement specification. A blocking Hook must contain its managed
+blocking marker and an actual deny-protocol output; `return 0` is rejected.
+Apply failures restore every file, config, Manifest, and state file touched by
+that transaction.
 
 Example output shape:
 
@@ -198,7 +202,7 @@ This skill **never modifies your existing content** without explicit consent and
 
 | Your data | Action |
 |---|---|
-| L1 memory files | ✋ Never touched |
+| L1 memory files | Unchanged by default scans/installs; only an individually confirmed promotion with an exact directory and backup replaces that entry with a stub |
 | CLAUDE.md | ✋ Never touched |
 | CLAUDE-personal.md (§一~§五 etc) | ✋ Outside `<!-- rules-architect:section-6 BEGIN/END -->` markers: untouched |
 | Existing hooks in `~/.claude/settings.json` | ✋ Preserved via deep-merge with conflict detection |
@@ -217,7 +221,10 @@ What this skill **adds** (all tracked in `~/.claude/.rules-architect-manifest.js
 
 **Migration vs Modification**: `diagnose.py` **suggests** memory entries that could be upgraded to other layers (e.g. rhythm-related rules → L0 hook), but **never auto-moves anything**. All migration is human-triggered (see §六 Upgrade flow).
 
-Uninstall is precise (per-manifest, hash-verified). Files you modified locally are never overwritten or deleted.
+Uninstall is precise (per-manifest, hash-verified). It removes bootstrap-created
+Skill links that still point to the recorded checkout, and removes a
+bootstrap-created checkout only when its Git worktree is clean. Files you
+modified locally are never overwritten or deleted.
 
 ## What modes do
 
@@ -303,7 +310,9 @@ Invoke the installed Skill with `$rules-architect` or select it through
 `/skills`.
 
 Uninstall uses the same `uninstall.py` (codex artifacts tracked under `codex_*`
-manifest keys for precise rollback).
+manifest keys for precise rollback). Retired managed files are moved into an
+indexed recovery archive; config edits use copied snapshots. Archive failure
+blocks the mutation.
 
 L1 memory does not port across tools (Codex has its own private store) — by
 design, L1 was never meant to carry team rules.
@@ -320,16 +329,34 @@ See `examples/cross-tool-shim.md` for details.
 ## Uninstall
 
 ```bash
+# Claude discovery entry
 python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
+
+# Codex-only discovery entry
+python3 ~/.agents/skills/rules-architect/scripts/uninstall.py
 ```
 
 Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
-1. Removes each installed file (verified by hash)
+1. Verifies each installed file and moves the original into the recovery archive
 2. Removes only the hook entries this skill added from `settings.json`
-3. Restores `~/.claude/settings.json.bak.<ts>` only if user explicitly opts in
+3. Uses each recorded `config_path` for user-level or project-level Hook config
+4. Removes unchanged bootstrap-created Skill entries and a clean owned checkout
+5. Restores `~/.claude/settings.json.bak.<ts>` only if user explicitly opts in
 
-**Deletes** (as a manifest-tracked installed file, hash-verified):
-- Project-level `.claude/rules/rule-intake.md` (if you edited it → hash mismatch → skipped/preserved)
+Recovery archives default to
+`~/.claude/rules-architect-backups/<timestamp>-uninstall-<run-id>/`.
+`index.json` records each original path, SHA-256, mode, `moved`/`copied`
+disposition, and archived location;
+`manifest.before.json` preserves the pre-uninstall Manifest. Set
+`RULES_ARCHITECT_RECOVERY_DIR` to use another archive root.
+
+**Moves into the recovery archive** (manifest-tracked and hash-verified):
+- Managed Hook scripts and project-level `.claude/rules/rule-intake.md`
+- Managed Hook or Path Rule artifacts retired or replaced by reconciliation
+
+**Directly removes installer-owned assets**:
+- Bootstrap-created Skill symlinks that still point to the recorded checkout
+- The bootstrap-created canonical checkout only when its Git worktree is clean
 
 **Does NOT delete**:
 - Your own customizations to installed files (hash mismatch → skip with warning)
@@ -341,7 +368,8 @@ Uninstall reads `~/.claude/.rules-architect-manifest.json` and:
 A: Each hook adds ~10-20ms; 3 hooks total < 100ms. Dedupe ensures same reminder fires once per session.
 
 **Q: What if I already have hooks installed?**
-A: `install_hooks.py` does deep-merge with conflict detection. If a same-matcher hook exists, you'll be prompted: append / skip / replace.
+A: `install_hooks.py` deep-merges with conflict detection. For the same matcher,
+you can append or skip; third-party Hooks are never replaced.
 
 **Q: How do I know hooks are firing?**
 A: Check `~/.cache/claude-hooks/audit.jsonl`:

@@ -111,7 +111,26 @@ assert expected <= {
     Path(item["path"]).name
     for item in manifest.get("codex_installed_files", [])
 }
+assert len(manifest.get("skill_targets", [])) == 2
+assert manifest["canonical_checkout"]["created_by_bootstrap"] is True
 PY
+
+HOME="$TMP_HOME" python3 "$CLAUDE_SKILL/scripts/uninstall.py" --non-interactive >/dev/null
+test ! -e "$CLAUDE_SKILL"
+test ! -L "$CODEX_SKILL"
+
+DIAG_HOME="$TMP_ROOT/diagnose-only-home"
+mkdir -p "$DIAG_HOME"
+HOME="$DIAG_HOME" \
+PATH="$TMP_BIN:$PATH" \
+RULES_ARCHITECT_REPO="$TMP_SOURCE" \
+bash "$REPO_ROOT/bootstrap.sh" \
+  --platforms codex \
+  --mode D \
+  --non-interactive >/dev/null
+test ! -e "$DIAG_HOME/.claude"
+test ! -e "$DIAG_HOME/.agents"
+test ! -e "$DIAG_HOME/.codex"
 
 CLAUDE_ONLY_HOME="$TMP_ROOT/claude-only-home"
 CODEX_ONLY_HOME="$TMP_ROOT/codex-only-home"

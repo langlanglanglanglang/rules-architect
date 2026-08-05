@@ -72,8 +72,17 @@ class ApplyReconciliationTest(unittest.TestCase):
             "#!/usr/bin/env python3\n"
             "# rules-architect-id: {}\n"
             "# rules-architect-enforcement: {}\n"
-            "def main():\n    return 0\n"
-        ).format(rule_id, enforcement_digest(self.enforcement))
+            "# rules-architect-blocking: {}\n"
+            "import json\n"
+            "def main():\n"
+            "    print(json.dumps({{\"hookSpecificOutput\": "
+            "{{\"permissionDecision\": \"deny\"}}}}))\n"
+            "    return 0\n"
+        ).format(
+            rule_id,
+            enforcement_digest(self.enforcement),
+            enforcement_digest(self.enforcement),
+        )
 
     def registration(self, path, event="PreToolUse", command=None):
         return {
@@ -118,25 +127,28 @@ class ApplyReconciliationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "已存在"):
                 apply_plan(self.plan, self.inventory, confirm=True, verify_current=False)
 
-    def test_partial_selection_applies_only_requested_operation(self):
+    def test_partial_selection_rejects_incomplete_recommendation(self):
         second = self.project / ".claude" / "hooks" / "second.py"
         self.plan["operations"].append(self.create_operation("OP-second", second))
         self.plan["recommendations"][0]["operation_ids"].append("OP-second")
         with mock.patch.dict(os.environ, {"HOME": str(self.home)}, clear=False):
-            preview = apply_plan(
-                self.plan, self.inventory, confirm=False, verify_current=False,
-                selected_operation_ids={"OP-second"},
-            )
-            self.assertEqual(preview["selected_operation_ids"], ["OP-second"])
-            result = apply_plan(
-                self.plan, self.inventory, confirm=True, verify_current=False,
-                selected_operation_ids={"OP-second"},
-            )
+            with self.assertRaisesRegex(ValueError, "不可拆分"):
+                apply_plan(
+                    self.plan, self.inventory, confirm=False, verify_current=False,
+                    selected_operation_ids={"OP-second"},
+                )
         self.assertFalse(self.target.exists())
-        self.assertTrue(second.exists())
-        state = json.loads(Path(result["state_path"]).read_text())
-        self.assertEqual(state["rule_ids"], ["R-new"])
-        self.assertEqual(state["applied_operation_ids"], ["OP-second"])
+        self.assertFalse(second.exists())
+
+    def test_marker_only_block_hook_is_rejected(self):
+        content = self.plan["operations"][0]["content"]
+        self.plan["operations"][0]["content"] = content.replace(
+            'print(json.dumps({"hookSpecificOutput": {"permissionDecision": "deny"}}))',
+            "pass",
+        )
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}, clear=False):
+            with self.assertRaisesRegex(ValueError, "实际 deny 输出"):
+                apply_plan(self.plan, self.inventory, confirm=False, verify_current=False)
 
     def test_partial_selection_rejects_unknown_operation(self):
         with self.assertRaisesRegex(ValueError, "未知操作 ID"):
@@ -172,6 +184,19 @@ class ApplyReconciliationTest(unittest.TestCase):
             with self.assertRaises(json.JSONDecodeError):
                 apply_plan(self.plan, self.inventory, confirm=True, verify_current=False)
         self.assertFalse(self.target.exists())
+
+    def test_apply_failure_rolls_back_files_config_manifest_and_state(self):
+        manifest = self.home / ".claude" / ".rules-architect-manifest.json"
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}, clear=False):
+            with mock.patch(
+                "apply_reconciliation.atomic_private_write",
+                side_effect=OSError("state write failed"),
+            ):
+                with self.assertRaisesRegex(OSError, "state write failed"):
+                    apply_plan(self.plan, self.inventory, confirm=True, verify_current=False)
+        self.assertFalse(self.target.exists())
+        self.assertFalse(self.config.exists())
+        self.assertFalse(manifest.exists())
 
     def test_update_uses_explicit_desired_registration_set(self):
         hook = self.project / ".claude" / "hooks" / "managed.py"
@@ -227,13 +252,22 @@ class ApplyReconciliationTest(unittest.TestCase):
                 + "# rules-architect-enforcement: {}\n".format(
                     enforcement_digest(second_enforcement)
                 )
+                + "# rules-architect-blocking: {}\n".format(
+                    enforcement_digest(second_enforcement)
+                )
             ),
             "expected_hash": old_hash,
             "reason": "更新注册", "requires_confirmation": True,
             "registrations": [replacement, preserved],
         }]
-        with mock.patch.dict(os.environ, {"HOME": str(self.home)}, clear=False):
-            apply_plan(self.plan, self.inventory, confirm=True, verify_current=False)
+        recovery_root = self.home / "recovery"
+        with mock.patch.dict(os.environ, {
+            "HOME": str(self.home),
+            "RULES_ARCHITECT_RECOVERY_DIR": str(recovery_root),
+        }, clear=False):
+            result = apply_plan(
+                self.plan, self.inventory, confirm=True, verify_current=False
+            )
         serialized = json.dumps(json.loads(self.config.read_text()), ensure_ascii=False)
         self.assertNotIn("python3 old.py", serialized)
         self.assertIn(str(hook), serialized)
@@ -241,6 +275,96 @@ class ApplyReconciliationTest(unittest.TestCase):
         manifest_text = json.dumps(json.loads(manifest_path.read_text()), ensure_ascii=False)
         self.assertNotIn("python3 old.py", manifest_text)
         self.assertIn(str(hook), manifest_text)
+        self.assertIn("recovery_archive", result)
+        archive = Path(result["recovery_archive"])
+        index = json.loads((archive / "index.json").read_text())
+        archived_paths = {entry["original_path"] for entry in index["files"]}
+        self.assertIn(str(hook), archived_paths)
+        self.assertIn(str(self.config.resolve()), archived_paths)
+        hook_entry = next(
+            entry for entry in index["files"]
+            if entry["original_path"] == str(hook)
+        )
+        self.assertEqual(
+            (archive / hook_entry["archive_path"]).read_text(), "old\n"
+        )
+        self.assertEqual(hook_entry["disposition"], "copied")
+
+    def test_delete_moves_hook_and_snapshots_config_before_removal(self):
+        hook = self.project / ".claude" / "hooks" / "managed.py"
+        hook.parent.mkdir(parents=True)
+        old_content = self.hook_content()
+        hook.write_text(old_content)
+        old_hash = hashlib.sha256(hook.read_bytes()).hexdigest()
+        registration = self.registration(hook)
+        self.config.write_text(json.dumps({
+            "hooks": {"PreToolUse": [{
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": registration["command"]}],
+            }]},
+        }))
+        manifest_path = self.home / ".claude" / ".rules-architect-manifest.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps({
+            "installed_files": [{
+                "path": str(hook), "hash_sha256": old_hash,
+                "owner": "rules-architect", "rule_id": "R-new",
+            }],
+            "settings_hooks_added": [registration],
+        }))
+        self.inventory["hook_artifacts"] = [{
+            "artifact_id": "H-managed", "kind": "hook", "path": str(hook),
+            "status": "active", "ownership": "rules_architect",
+            "safe_to_modify": True, "modified_since_managed": False,
+            "registrations": [registration], "content_hash": old_hash,
+            "managed_hash": old_hash, "platforms": ["claude"],
+            "scopes": ["project"], "registered": True, "exists": True,
+            "symlink": False, "rule_id": "R-new", "generator": None,
+        }]
+        self.refresh_fingerprint()
+        self.plan["inventory_fingerprint"] = self.inventory["inventory_fingerprint"]
+        self.plan["recommendations"][0].update({
+            "action": "delete", "artifact_ids": ["H-managed"],
+            "operation_ids": ["OP-delete"],
+        })
+        self.plan["artifact_decisions"] = [{
+            "artifact_id": "H-managed", "action": "delete", "reason": "退役",
+            "confidence": "high", "decision_source": "existing_state",
+            "operation_ids": ["OP-delete"],
+        }]
+        self.plan["operations"] = [{
+            "operation_id": "OP-delete", "action": "delete",
+            "rule_id": "R-new", "artifact_id": "H-managed",
+            "path": str(hook), "expected_hash": old_hash,
+            "reason": "删除已退役 Hook", "requires_confirmation": True,
+            "registrations": [],
+        }]
+        recovery_root = self.home / "recovery-delete"
+        with mock.patch.dict(os.environ, {
+            "HOME": str(self.home),
+            "RULES_ARCHITECT_RECOVERY_DIR": str(recovery_root),
+        }, clear=False):
+            result = apply_plan(
+                self.plan, self.inventory, confirm=True, verify_current=False
+            )
+
+        self.assertFalse(hook.exists())
+        config = json.loads(self.config.read_text())
+        self.assertEqual(config.get("hooks"), {})
+        archive = Path(result["recovery_archive"])
+        index = json.loads((archive / "index.json").read_text())
+        hook_entry = next(
+            entry for entry in index["files"]
+            if entry["original_path"] == str(hook)
+        )
+        self.assertEqual(
+            (archive / hook_entry["archive_path"]).read_text(), old_content
+        )
+        self.assertEqual(hook_entry["disposition"], "moved")
+        self.assertIn(
+            str(self.config.resolve()),
+            {entry["original_path"] for entry in index["files"]},
+        )
 
 
 if __name__ == "__main__":

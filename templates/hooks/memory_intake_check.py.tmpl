@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook: when assistant writes to a CC memory file
-(MEMORY.md, feedback_*.md, reference_*.md under any memory/ dir),
+PreToolUse hook: when assistant writes to any Markdown file under a memory/
+directory,
 inject the 5-question rule placement SOP.
 
 Dual-runtime — works under both Claude Code and Codex CLI:
@@ -88,7 +88,7 @@ def candidate_paths(tool_input: dict) -> list:
 
 
 def is_memory_path(p: str) -> bool:
-    """Detect memory files: <any>/memory/MEMORY.md, feedback_*.md, reference_*.md.
+    """Detect every Markdown file under a memory directory.
 
     Segment-aware (not a raw substring test) so it also matches Codex
     apply_patch relative paths like "memory/feedback_x.md" (no leading slash),
@@ -100,12 +100,7 @@ def is_memory_path(p: str) -> bool:
     parts = p.replace("\\", "/").split("/")
     if "memory" not in parts[:-1]:   # 'memory' must be a directory component
         return False
-    name = parts[-1].lower()
-    return (
-        name == "memory.md"
-        or name.startswith("feedback_")
-        or name.startswith("reference_")
-    )
+    return parts[-1].lower().endswith(".md")
 
 
 # Self-contained reminder — full 5-Q SOP embedded, no external references.

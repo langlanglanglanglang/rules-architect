@@ -3,7 +3,8 @@
 rules-architect skill: uninstall.py
 
 Precise rollback per manifest (NOT bulk backup restore):
-  1. For each installed_file: hash match → delete; mismatch → skip with warn
+  1. For each installed_file: hash match → move into recovery archive;
+     mismatch → skip with warn
   2. For each settings_hooks_added: remove only those exact entries from
      settings.json (preserves user's other hooks)
   3. For each personal_md_sections: remove BEGIN/END marker block, keep rest
@@ -24,10 +25,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+from recovery_archive import RecoveryArchive
 
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
@@ -87,7 +91,7 @@ def confirm(msg: str, default_yes: bool = False) -> bool:
     return a.startswith("y")
 
 
-def remove_installed_files(manifest, dry_run, force, non_interactive,
+def remove_installed_files(manifest, dry_run, force, non_interactive, archive,
                            key="installed_files"):
     removed_any = False
     for entry in list(manifest.get(key, [])):
@@ -110,120 +114,109 @@ def remove_installed_files(manifest, dry_run, force, non_interactive,
                 continue
             else:
                 warn(f"{p}：哈希不一致，文件在安装后被修改")
-                if not confirm("    仍要删除吗？", default_yes=False):
+                if not confirm("    仍要移动到恢复归档并卸载吗？", default_yes=False):
                     continue
         if dry_run:
-            info(f"仅预览：将删除 {p}")
+            info(f"仅预览：将把 {p} 移动到恢复归档 {archive.planned_path}")
         else:
-            p.unlink()
-            ok(f"已删除 {p}")
+            try:
+                archive.move_file(p, key, expected_hash=actual)
+            except Exception as exc:
+                warn(f"{p}：移动到恢复归档失败，已保留原文件（{exc}）")
+                continue
+            ok(f"已移动到恢复归档：{p}")
         manifest[key].remove(entry)
         removed_any = True
     return removed_any
 
 
-def remove_settings_hooks(manifest, dry_run):
-    added = manifest.get("settings_hooks_added", [])
-    if not added or not SETTINGS_PATH.exists():
+def remove_hook_registrations(
+    manifest, key, platform, default_path, dry_run, archive
+):
+    added = list(manifest.get(key, []))
+    if not added:
         return
-    try:
-        settings = json.loads(SETTINGS_PATH.read_text())
-    except Exception as e:
-        err(f"无法读取 settings.json：{e}")
-        return
+    grouped = {}
+    for entry in added:
+        config_path = Path(entry.get("config_path") or default_path).expanduser().resolve()
+        grouped.setdefault(config_path, []).append(entry)
 
-    targets = set(
-        (e["event"], e["matcher"], e["command"]) for e in added
+    remaining = []
+    for config_path, entries in grouped.items():
+        if not config_path.exists():
+            info(f"{config_path}：配置已不存在，移除对应跟踪记录")
+            continue
+        try:
+            config = json.loads(config_path.read_text())
+            hooks_section = config.get("hooks", {})
+            if not isinstance(config, dict) or not isinstance(hooks_section, dict):
+                raise ValueError("根节点和 hooks 必须是对象")
+        except Exception as exc:
+            err(f"无法读取 Hook 配置 {config_path}：{exc}")
+            remaining.extend(entries)
+            continue
+
+        targets = {
+            (entry.get("event"), entry.get("matcher"), entry.get("command"))
+            for entry in entries
+            if entry.get("platform", platform) == platform
+        }
+        removed = 0
+        for event in list(hooks_section.keys()):
+            new_groups = []
+            for group in hooks_section[event]:
+                matcher = group.get("matcher") if platform == "codex" else group.get("matcher", "*")
+                kept = []
+                for hook in group.get("hooks", []):
+                    identity = (event, matcher, hook.get("command", ""))
+                    if identity in targets:
+                        removed += 1
+                    else:
+                        kept.append(hook)
+                if kept:
+                    copied = dict(group)
+                    copied["hooks"] = kept
+                    new_groups.append(copied)
+            if new_groups:
+                hooks_section[event] = new_groups
+            else:
+                hooks_section.pop(event, None)
+
+        if dry_run:
+            info(
+                f"仅预览：将先归档 {config_path} 到 {archive.planned_path}，"
+                f"再移除 {removed} 个 Hook 条目"
+            )
+        else:
+            if removed:
+                try:
+                    archive.backup_file(config_path, f"{platform}_hook_config")
+                except Exception as exc:
+                    warn(f"{config_path}：恢复归档失败，已禁止修改（{exc}）")
+                    remaining.extend(entries)
+                    continue
+                atomic_write(config_path, json.dumps(config, indent=2, ensure_ascii=False))
+                ok(f"已从 {config_path} 移除 {removed} 个 Hook 条目")
+            else:
+                info(f"{config_path} 中没有匹配的 Hook 条目")
+    manifest[key] = remaining
+
+
+def remove_settings_hooks(manifest, dry_run, archive):
+    remove_hook_registrations(
+        manifest, "settings_hooks_added", "claude", SETTINGS_PATH, dry_run, archive
     )
-    hooks_section = settings.get("hooks", {})
-    removed = 0
-    for event in list(hooks_section.keys()):
-        configs = hooks_section[event]
-        new_configs = []
-        for c in configs:
-            matcher = c.get("matcher", "*")
-            kept_hooks = []
-            for h in c.get("hooks", []):
-                cmd = h.get("command", "")
-                if (event, matcher, cmd) in targets:
-                    removed += 1
-                    continue
-                kept_hooks.append(h)
-            if kept_hooks:
-                c2 = dict(c)
-                c2["hooks"] = kept_hooks
-                new_configs.append(c2)
-            # else: drop empty config block entirely
-        if new_configs:
-            hooks_section[event] = new_configs
-        else:
-            del hooks_section[event]
-
-    if removed:
-        if dry_run:
-            info(f"仅预览：将从 settings.json 移除 {removed} 个 Hook 条目")
-        else:
-            new_text = json.dumps(settings, indent=2, ensure_ascii=False)
-            atomic_write(SETTINGS_PATH, new_text)
-            ok(f"已从 settings.json 移除 {removed} 个 Hook 条目")
-        manifest["settings_hooks_added"] = []
-    else:
-        info("settings.json 中没有匹配的 Hook 条目")
 
 
-def remove_codex_hooks(manifest, dry_run):
-    """Remove only our entries from ~/.codex/hooks.json (mirror of
-    remove_settings_hooks, but a codex UserPromptSubmit entry carries no
-    'matcher' key → matcher is None, so compare with None default)."""
-    added = manifest.get("codex_hooks_added", [])
-    if not added or not CODEX_HOOKS_JSON.exists():
-        return
-    try:
-        config = json.loads(CODEX_HOOKS_JSON.read_text())
-    except Exception as e:
-        err(f"无法读取 Codex hooks.json：{e}")
-        return
-
-    targets = set((e["event"], e["matcher"], e["command"]) for e in added)
-    hooks_section = config.get("hooks", {})
-    removed = 0
-    for event in list(hooks_section.keys()):
-        new_configs = []
-        for c in hooks_section[event]:
-            matcher = c.get("matcher")  # None when key absent (UserPromptSubmit)
-            kept_hooks = []
-            for h in c.get("hooks", []):
-                cmd = h.get("command", "")
-                # Match exact (event,matcher,cmd), and also (event,None,cmd):
-                # matcher-less events (UserPromptSubmit) are recorded with
-                # matcher=None but our command may live in a matcher:"*" group.
-                if (event, matcher, cmd) in targets or (event, None, cmd) in targets:
-                    removed += 1
-                    continue
-                kept_hooks.append(h)
-            if kept_hooks:
-                c2 = dict(c)
-                c2["hooks"] = kept_hooks
-                new_configs.append(c2)
-            # else: drop empty group entirely
-        if new_configs:
-            hooks_section[event] = new_configs
-        else:
-            del hooks_section[event]
-
-    if removed:
-        if dry_run:
-            info(f"仅预览：将从 Codex hooks.json 移除 {removed} 个条目")
-        else:
-            atomic_write(CODEX_HOOKS_JSON,
-                         json.dumps(config, indent=2, ensure_ascii=False))
-            ok(f"已从 Codex hooks.json 移除 {removed} 个条目")
-        manifest["codex_hooks_added"] = []
-    else:
-        info("Codex hooks.json 中没有匹配条目")
+def remove_codex_hooks(manifest, dry_run, archive):
+    remove_hook_registrations(
+        manifest, "codex_hooks_added", "codex", CODEX_HOOKS_JSON, dry_run, archive
+    )
 
 
-def remove_personal_sections(manifest, dry_run, force, non_interactive):
+def remove_personal_sections(
+    manifest, dry_run, force, non_interactive, archive
+):
     sections = manifest.get("personal_md_sections", [])
     for s in list(sections):
         f = Path(s["file"])
@@ -260,11 +253,65 @@ def remove_personal_sections(manifest, dry_run, force, non_interactive):
                 continue  # keep tracked
         new_text = pattern.sub("", text, count=1)
         if dry_run:
-            info(f"仅预览：将从 {f} 移除 §六标记区块")
+            info(
+                f"仅预览：将先归档 {f} 到 {archive.planned_path}，"
+                "再移除 §六标记区块"
+            )
         else:
+            try:
+                archive.backup_file(f, "personal_md_before_section_removal")
+            except Exception as exc:
+                warn(f"{f}：恢复归档失败，已禁止修改（{exc}）")
+                continue
             atomic_write(f, new_text)
             ok(f"已从 {f} 移除 §六")
         sections.remove(s)
+
+
+def remove_skill_install(manifest, dry_run):
+    checkout_entry = manifest.get("canonical_checkout") or {}
+    checkout = Path(checkout_entry.get("path", "")).expanduser()
+    remaining = []
+    for entry in manifest.get("skill_targets", []):
+        target = Path(entry.get("path", "")).expanduser()
+        if not entry.get("created_by_bootstrap") or target == checkout:
+            continue
+        if target.is_symlink() and target.resolve(strict=False) == checkout.resolve(strict=False):
+            if dry_run:
+                info(f"仅预览：将移除 Skill 链接 {target}")
+            else:
+                target.unlink()
+                ok(f"已移除 Skill 链接 {target}")
+        elif target.exists():
+            warn(f"Skill 入口已变化，保持不动：{target}")
+            remaining.append(entry)
+
+    if checkout_entry.get("created_by_bootstrap") and checkout.is_dir():
+        try:
+            dirty = subprocess.check_output(
+                ["git", "-C", str(checkout), "status", "--porcelain"], text=True
+            ).strip()
+        except Exception as exc:
+            warn(f"无法确认 checkout 是否干净，保持不动：{checkout}（{exc}）")
+            remaining.extend(
+                entry for entry in manifest.get("skill_targets", [])
+                if Path(entry.get("path", "")).expanduser() == checkout
+            )
+        else:
+            if dirty:
+                warn(f"checkout 存在本地修改，保持不动：{checkout}")
+                remaining.extend(
+                    entry for entry in manifest.get("skill_targets", [])
+                    if Path(entry.get("path", "")).expanduser() == checkout
+                )
+            elif dry_run:
+                info(f"仅预览：将移除 bootstrap 创建的 checkout {checkout}")
+            else:
+                shutil.rmtree(checkout)
+                ok(f"已移除 bootstrap 创建的 checkout {checkout}")
+    manifest["skill_targets"] = remaining
+    if not remaining:
+        manifest.pop("canonical_checkout", None)
 
 
 def restore_backup_if_requested(manifest, dry_run):
@@ -296,6 +343,8 @@ def print_uninstall_preservation_summary() -> None:
     print("   ✋ 其他 .claude/rules/*.md            — 只移除 rule-intake.md")
     print("   ✋ Codex hooks.json 中的其他条目      — 只移除本项目添加的条目")
     print()
+    print("   卸载的受管文件 → 直接移动到恢复归档，不执行不可恢复删除。")
+    print("   Hook 配置/文档裁剪 → 修改前复制快照；归档失败则禁止修改。")
     print("   本地修改过且哈希不一致的文件 → 警告后跳过，绝不直接删除。")
     print()
 
@@ -329,6 +378,9 @@ def main() -> int:
     # throwaway copy when previewing. (Real runs mutate the live manifest,
     # which is then archived below.)
     work = copy.deepcopy(manifest) if args.dry_run else manifest
+    archive = RecoveryArchive(
+        purpose="uninstall", manifest_path=MANIFEST_PATH, dry_run=args.dry_run
+    )
     print(f"\n📦 rules-architect 卸载器")
     print(f"   Manifest：{MANIFEST_PATH}")
     print(f"   已安装文件：{len(manifest.get('installed_files', []))}")
@@ -336,6 +388,7 @@ def main() -> int:
     print(f"   个人 Markdown 区块：{len(manifest.get('personal_md_sections', []))}")
     print(f"   Codex Hook 文件：{len(manifest.get('codex_installed_files', []))}")
     print(f"   Codex Hook 条目：{len(manifest.get('codex_hooks_added', []))}")
+    print(f"   Skill 入口：{len(manifest.get('skill_targets', []))}")
     print()
 
     if not args.non_interactive:
@@ -344,36 +397,50 @@ def main() -> int:
             return 1
 
     print("\n--- 正在移除已安装的 Hook 文件 ---")
-    remove_installed_files(work, args.dry_run, args.force, args.non_interactive)
+    remove_installed_files(
+        work, args.dry_run, args.force, args.non_interactive, archive
+    )
 
     print("\n--- 正在从 settings.json 移除 Hook 条目 ---")
-    remove_settings_hooks(work, args.dry_run)
+    remove_settings_hooks(work, args.dry_run, archive)
 
     print("\n--- 正在移除 Codex Hook 文件 ---")
     remove_installed_files(work, args.dry_run, args.force,
-                           args.non_interactive, key="codex_installed_files")
+                           args.non_interactive, archive,
+                           key="codex_installed_files")
 
     print("\n--- 正在从 Codex hooks.json 移除 Hook 条目 ---")
-    remove_codex_hooks(work, args.dry_run)
+    remove_codex_hooks(work, args.dry_run, archive)
 
     print("\n--- 正在从个人 Markdown 移除 §六区块 ---")
     remove_personal_sections(work, args.dry_run,
-                             args.force, args.non_interactive)
+                             args.force, args.non_interactive, archive)
 
     if args.restore_backup:
         print("\n--- 正在恢复 settings.json 备份 ---")
         restore_backup_if_requested(work, args.dry_run)
 
+    print("\n--- 正在移除 Skill 入口与安装 checkout ---")
+    remove_skill_install(work, args.dry_run)
+
     if args.dry_run:
         info("仅预览完成，没有实际修改任何内容。")
         return 0
+
+    recovery_summary = archive.summary()
+    if recovery_summary:
+        histories = work.setdefault("recovery_archives", [])
+        histories.append(recovery_summary)
+        work["recovery_archives"] = histories[-20:]
+        ok(f"恢复归档已保存 → {recovery_summary['path']}")
 
     # If any tracked entries were preserved/skipped (e.g. locally-modified files
     # or §六 blocks), keep a reduced manifest so a later deliberate --force run
     # can still find them. Only archive when everything tracked is resolved.
     remaining = sum(len(work.get(k, [])) for k in (
         "installed_files", "codex_installed_files",
-        "settings_hooks_added", "codex_hooks_added", "personal_md_sections"))
+        "settings_hooks_added", "codex_hooks_added", "personal_md_sections",
+        "skill_targets"))
     if remaining:
         save_manifest(work)
         warn(f"已保留 {remaining} 个跟踪项（被修改或跳过）— Manifest 仍保存在 "

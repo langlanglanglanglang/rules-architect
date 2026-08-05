@@ -23,10 +23,10 @@ Target lessons file resolution order:
   (errors if neither is set)
 
 Usage:
-  memory_sync.py push --feedback feedback_xxx --dry-run
-  memory_sync.py push --feedback feedback_xxx --reason "team should know this"
-  memory_sync.py push --feedback feedback_xxx --lessons ./docs/ai/lessons.md
-  memory_sync.py push --feedback feedback_xxx --update   # refresh existing block
+  memory_sync.py push --feedback feedback_xxx --memory-dir <path> --dry-run
+  memory_sync.py push --feedback feedback_xxx --memory-dir <path> --reason "team should know this"
+  memory_sync.py push --feedback feedback_xxx --memory-dir <path> --lessons ./docs/ai/lessons.md
+  memory_sync.py push --feedback feedback_xxx --memory-dir <path> --update
 """
 import argparse
 import os
@@ -60,21 +60,8 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def find_memory_dirs():
-    root = Path.home() / ".claude" / "projects"
-    if not root.exists():
-        return []
-    out = []
-    for d in root.iterdir():
-        m = d / "memory"
-        if m.is_dir():
-            out.append((m.stat().st_mtime, m))
-    out.sort(reverse=True)
-    return [m for _, m in out]
-
-
-def find_memory_file(feedback_name, memory_dir_override=None):
-    dirs = [Path(memory_dir_override)] if memory_dir_override else find_memory_dirs()
+def find_memory_file(feedback_name, memory_dir_override):
+    dirs = [Path(memory_dir_override).expanduser().resolve()]
     for d in dirs:
         for ext in (".md", ""):
             p = d / f"{feedback_name}{ext}"
@@ -124,8 +111,7 @@ def cmd_push(args) -> int:
     mem = find_memory_file(args.feedback, args.memory_dir)
     if mem is None:
         err(f"未找到记忆文件：{args.feedback}")
-        for d in find_memory_dirs():
-            info(f"  已搜索：{d}")
+        info(f"  已搜索：{Path(args.memory_dir).expanduser()}")
         return 1
 
     _, body = split_frontmatter(mem.read_text())
@@ -178,8 +164,8 @@ def main() -> int:
                    help="值得向团队共享的原因")
     p.add_argument("--lessons", default="",
                    help="目标 lessons.md（未传入时读取 $LESSONS_PATH）")
-    p.add_argument("--memory-dir", default="",
-                   help="指定要搜索的记忆目录")
+    p.add_argument("--memory-dir", required=True,
+                   help="已确认的精确记忆目录（必填）")
     p.add_argument("--update", action="store_true",
                    help="条目已存在时刷新对应区块")
     p.add_argument("--dry-run", action="store_true")
@@ -188,7 +174,6 @@ def main() -> int:
     if args.command == "push":
         # normalize empty strings to None for override args
         args.lessons = args.lessons or None
-        args.memory_dir = args.memory_dir or None
         return cmd_push(args)
     ap.print_help()
     return 2

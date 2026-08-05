@@ -19,12 +19,12 @@
 |---|---|---|
 | **作用域** | CLAUDE.md 系列文件 | 5 层规则生态（L0 hook / L1 memory / L2 path-scoped / L3 CLAUDE.md / L5 团队 lessons） |
 | **核心问题** | 内容质量 | 规则归位 |
-| **输出** | 评分报告 + diff 审批后 Edit | 装 5 个 hook + path-scoped rule + 维护文档 + 维护脚本 |
+| **输出** | 评分报告 + diff 审批后 Edit | 装 3 个核心 Hook + path-scoped rule + 维护文档 + 维护脚本 |
 | **机制** | 一次性 audit（人读报告 → 改） | 持续拦截（实时 hook 触发，不依赖 attention） |
 | **改 settings.json** | 否 | 是（注册 hooks，含 manifest 精确回滚） |
 | **L3 CLAUDE.md 内容审计** | ✅ 专长（6 项打分 A–F） | ❌ 明确委托给 claude-md-improver |
 | **L1 memory 管理** | ❌ 不管 | ✅ 5 问 SOP / 升级 / 退役 / 团队同步 |
-| **L0 hook 实时拦截** | ❌ 不做 | ✅ 4–5 个通用 hook |
+| **L0 hook 实时拦截** | ❌ 不做 | ✅ 3 个核心 Hook；项目工作流 Hook 仅提供示例 |
 | **L2 path-scoped 编辑触发** | ❌ 不做 | ✅ `rule-intake.md` |
 | **L5 团队 lessons 同步** | ❌ 不管 | ✅ `memory_sync.py` |
 
@@ -34,7 +34,7 @@
 |---|---|---|
 | CLAUDE.md 里 build 命令过时 | ✅ 发现 + 提议修正 | ❌ 不关心内容对错 |
 | 一条规则在 memory 写 3 次还在忘 | ❌ 不看 memory | ✅ 5 问 SOP → 升级 L0 hook |
-| 开 MR 后总忘报五列汇总 | ❌ 完全不管 | ✅ `mr_created_reminder` hook 实时拦 |
+| 开 MR 后总忘报五列汇总 | ❌ 完全不管 | ⚠️ 可从 `mr_created_reminder` 示例派生，默认不安装 |
 | CLAUDE.md 太长，attention 稀释 | ⚠️ 给 conciseness 评分 | ✅ 5 问 SOP 推规则下沉到 L2 path-scoped |
 | 个人 memory ↔ 团队 lessons 同步 | ❌ 不管 | ✅ `memory_sync.py` 单向 push（设计如此） |
 | 完整审计 CLAUDE.md 体系 | ✅ **专长** | ❌ 委托 |

@@ -6,8 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-08-05
+
 ### Added
 
+- Persistent, indexed recovery archives: delete/uninstall moves the original
+  managed file into the archive, while updates/disables/config edits copy a
+  pre-mutation snapshot. Archive failure blocks the mutation.
 - A schema 1.2 two-stage recommendation flow: unresolved semantic choices are
   collected in `clarifications` before any final recommendation or operation
   can be produced.
@@ -19,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   final placement and action; final conclusions and operations are cross-linked.
 - Mutating recommendations distinguish automatic, manual, and no-op execution;
   moves remain manual until transactional support exists.
+- Bootstrap-owned Skill discovery entries and clean checkouts are now tracked
+  for complete uninstall.
 
 ### Changed
 
@@ -33,15 +40,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   apply rejects legacy or non-ready plans.
 - Hook writes use an explicit desired registration set and must bind generated
   content to the final enforcement specification.
+- Tool and Manifest output now identify this release as `2.5.0`.
+- Memory discovery includes every Markdown topic file and extracts declarative
+  paragraphs/tables at medium confidence instead of silently dropping them.
 
 ### Fixed
 
+- Uninstall and reconciliation no longer irreversibly delete Hook/Path Rule
+  artifacts; retired files are moved into recovery storage with their original
+  path, mode, disposition, and pre-run Manifest.
 - Codex Hook installation no longer fails merely because the desktop client's
   shell cannot find a separate `codex` executable or finds an older CLI.
   Version detection is advisory by default; `--strict-version-check` preserves
   blocking behavior for CI.
 - The Codex-only manual install example now uses the actual Skill discovery
   path at `~/.agents/skills/rules-architect`.
+- Partial execution cannot split one recommendation's operations; blocking
+  Hooks require a real deny-protocol implementation rather than markers alone.
+- Apply and Hook installation failures restore their pre-run snapshots.
+- Project-level Hook registrations uninstall from their recorded config paths.
+- Memory promotion and team sync require an explicit, confirmed memory
+  directory and no longer choose another project by modification time.
+- Diagnose-only bootstrap runs from an auto-cleaned temporary checkout and
+  creates no persistent Skill entry or Manifest.
+- Claude Hook conflicts no longer offer destructive replacement of third-party
+  commands.
 
 ## [2.4.0] — 2026-08-03
 

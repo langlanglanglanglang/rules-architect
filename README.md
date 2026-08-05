@@ -84,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | \
   bash -s -- --platforms codex
 
-# 仅诊断
+# 仅诊断：临时 checkout，结束后清理，不安装 Skill/Hook/规则
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --mode D
 
 # 全装（hook + rule-intake + §六）
@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --install-dir ~/workspace/rules-architect
 
 # 指定 tag 版本
-curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.4.0
+curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architect/main/bootstrap.sh | bash -s -- --tag v2.5.0
 ```
 
 ### 或者手动装 Claude Code（更透明）
@@ -154,15 +154,20 @@ Hook 会明确标注“阻断”（`block`）或“提醒”（`remind`）。
 报告默认只读，用户明确确认后才可用 `scripts/apply_reconciliation.py --yes` 执行。
 最终报告提供全部执行、按操作 ID 部分执行、仅执行新增、调整方案、导出、重扫和
 退出选项；没有可执行 operation 时不显示执行类选项。修改、禁用和删除在真正执行
-前还会二次确认。部分执行只记录实际成功项，避免重复运行时把未执行建议误判为
-已处理。`move` 和应用器不支持的文档/记忆写入只给人工操作，不伪装成原子自动操作。
+前还会二次确认。部分执行只记录实际成功项；同一条推荐绑定的多个 operation
+不可拆开选择，避免只安装半套 Hook。`move` 和应用器不支持的文档/记忆写入只给
+人工操作。
 
 schema 1.2 会逐一覆盖扫描候选，并把用户确认结果结构化绑定到最终 target、分组、
 Hook 模式和动作；最终结论与 operation 必须双向引用且动作一致，不能出现报告说
 “保留”但执行器实际“删除”的情况。
 预览与应用执行相同的路径、配置、状态和哈希预检；旧 schema 只能查看，写入必须是
 1.2 ready。自动 Hook 操作还会校验完整注册集合、enforcement 对应关系和生成内容
-标记，避免创建不会触发的孤立空文件。
+标记；阻断型 Hook 还必须包含受管 blocking 标记和实际 deny 协议输出，不能用
+`return 0` 空实现冒充。删除 Hook/Path Rule 时会把文件本体移动到
+`~/.claude/rules-architect-backups/`；更新、禁用和配置裁剪则先复制快照。
+归档失败会拒绝变更。应用失败还会恢复本轮
+触及的文件、配置、Manifest 和状态。
 
 输出形态示例：
 
@@ -186,7 +191,7 @@ P01 [R-proto-field][高][保留] Proto 字段编号必须递增
 
 | 模式 | 风险 | 改动文件 |
 |---|---|---|
-| D. 仅诊断 | 零 | 无 |
+| D. 仅诊断 | 零持久化 | 仅使用自动清理的私有临时 checkout |
 | C. 仅 path-scoped | 极低 | `.claude/rules/rule-intake.md` |
 | B. 仅 hook | 低 | 所选平台的 Claude/Codex Hook 配置与脚本 |
 | A. 全装 | 中 | B + 选择 Claude 时添加 path rule 与 `CLAUDE-personal.md` §六 |
@@ -199,7 +204,7 @@ P01 [R-proto-field][高][保留] Proto 字段编号必须递增
 
 | 你的数据 | 处理 |
 |---|---|
-| L1 memory 文件 | ✋ 从不动 |
+| L1 memory 文件 | 默认扫描/安装不修改；仅在逐条确认、展示精确目录并备份后，升级脚本才把该条正文替换为 stub |
 | CLAUDE.md | ✋ 从不动 |
 | CLAUDE-personal.md（§一~§五 等） | ✋ 在 `<!-- rules-architect:section-6 BEGIN/END -->` markers **外**：从不动 |
 | `~/.claude/settings.json` 已有 hook | ✋ deep-merge 含冲突检测，全部保留 |
@@ -217,7 +222,11 @@ P01 [R-proto-field][高][保留] Proto 字段编号必须递增
 
 **迁移 vs 修改**：`diagnose.py` **建议**哪些 memory 条目适合升级到其它层（如节奏类规则 → L0 hook），但**绝不自动迁移**。所有迁移由人工触发（见 §六 Upgrade 流程）。
 
-卸载是精确的（按 manifest，hash 校验）。你本地修改过的文件**从不**被覆盖或删除。
+卸载是精确的（按 manifest，hash 校验）：受管 Hook、Path Rule 等文件本体直接
+移动到带 `index.json` 的恢复归档，不执行复制后删除；配置和文档裁剪前复制快照。
+归档失败时不会移动或修改原文件。卸载也会移除 bootstrap 创建且仍指向原
+checkout 的 Skill 链接；bootstrap 创建的 checkout 仅在 Git 工作区干净时删除。
+你本地修改过的文件**从不**被覆盖或删除。
 
 ## 5 层记忆模型
 
@@ -300,16 +309,32 @@ L1 memory 不跨工具(codex 有自己的私有 store)——按设计 L1 本就�
 ## 卸载
 
 ```bash
+# Claude 安装入口
 python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
+
+# Codex-only 安装入口
+python3 ~/.agents/skills/rules-architect/scripts/uninstall.py
 ```
 
 卸载会读 `~/.claude/.rules-architect-manifest.json`：
-1. 移除每个已装文件（hash 校验）
+1. 对每个已装文件做 hash 校验，然后把文件本体移动到恢复归档
 2. 只删本 skill 添加的 hook 入口（保留你自己的其他 hook）
-3. 仅在用户显式选择时才恢复 settings.json 备份
+3. 按记录的 `config_path` 精确处理用户级或项目级 Hook 配置
+4. 移除 bootstrap 创建且未变化的 Skill 入口；干净且由 bootstrap 创建的 checkout 一并删除
+5. 仅在用户显式选择时才恢复 settings.json 备份
 
-**会删**（作为 manifest 跟踪的已装文件，hash 校验）：
-- 项目级 `.claude/rules/rule-intake.md`（若你改过 → hash 不一致 → 跳过保留）
+恢复归档默认写入 `~/.claude/rules-architect-backups/<时间>-uninstall-<随机 ID>/`，
+其中 `index.json` 记录原路径、SHA-256、权限、`moved/copied` 类型和归档文件位置，
+`manifest.before.json` 保存卸载前 Manifest。可用
+`RULES_ARCHITECT_RECOVERY_DIR` 指定其他目录。
+
+**会移入恢复归档**（作为 manifest 跟踪的已装文件，hash 校验）：
+- 受管 Hook 脚本和项目级 `.claude/rules/rule-intake.md`
+- 应用规则协调建议时被删除或替换的受管 Hook、Path Rule
+
+**会直接清理的安装器资产**：
+- bootstrap 创建、仍指向所记录 checkout 的 Skill 符号链接（仅删除入口）
+- bootstrap 创建且 Git 工作区干净的完整 checkout（可从远程重新下载）
 
 **不会删**：
 - 你对装好文件的本地修改（hash 不一致 → 跳过并 warn）
@@ -321,7 +346,8 @@ python3 ~/.claude/skills/rules-architect/scripts/uninstall.py
 A：每个 hook ~10-20ms；3 个合计 < 100ms。dedupe 保证同 reminder 一个会话只发一次。
 
 **Q：我已经装了别的 hook 怎么办？**
-A：`install_hooks.py` 做 deep-merge 含冲突检测。同 matcher 下已有 hook 时提示你选 append / skip / replace。
+A：`install_hooks.py` 做 deep-merge 含冲突检测。同 matcher 下已有 Hook 时只允许
+append 或 skip；不会替换第三方 Hook。
 
 **Q：怎么知道 hook 在生效？**
 A：看 `~/.cache/claude-hooks/audit.jsonl`：

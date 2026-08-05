@@ -137,13 +137,18 @@ def validate_enforcement(errors, enforcement, where):
         if adapter.get("mode") not in ENFORCEMENT_MODES:
             errors.append("{}：mode 无效".format(adapter_where))
         require_type(errors, adapter, "platform", str, adapter_where)
-        for field in ("event", "matcher"):
-            if not isinstance(adapter.get(field), str) or not adapter[field]:
-                errors.append(
-                    "{}：Hook 强制规则需要 '{}'".format(
-                        adapter_where, field
-                    )
-                )
+        if not isinstance(adapter.get("event"), str) or not adapter["event"]:
+            errors.append("{}：Hook 强制规则需要 'event'".format(adapter_where))
+        matcher = adapter.get("matcher")
+        matcher_optional = (
+            adapter.get("platform") == "codex"
+            and adapter.get("event") == "UserPromptSubmit"
+        )
+        if not matcher_optional and (not isinstance(matcher, str) or not matcher):
+            errors.append("{}：Hook 强制规则需要 'matcher'".format(adapter_where))
+        elif matcher_optional and matcher is not None \
+                and (not isinstance(matcher, str) or not matcher):
+            errors.append("{}：matcher 必须为非空字符串或 null".format(adapter_where))
         if adapter.get("mode") == "block":
             if (
                 not isinstance(adapter.get("predicate"), str)
@@ -250,8 +255,17 @@ def validate_operations(errors, operations, inventory, schema_12=False):
             if not isinstance(registration, dict):
                 errors.append("{}：必须是对象".format(registration_where))
                 continue
-            for field in ("platform", "config_path", "event", "matcher", "command"):
+            for field in ("platform", "config_path", "event", "command"):
                 require_type(errors, registration, field, str, registration_where)
+            matcher = registration.get("matcher")
+            matcher_optional = (
+                registration.get("platform") == "codex"
+                and registration.get("event") == "UserPromptSubmit"
+            )
+            if not matcher_optional:
+                require_type(errors, registration, "matcher", str, registration_where)
+            elif matcher is not None and not isinstance(matcher, str):
+                errors.append("{}：matcher 必须为字符串或 null".format(registration_where))
         if schema_12:
             rule_id = operation.get("rule_id")
             if rule_id is not None and (not isinstance(rule_id, str) or not rule_id):
@@ -543,6 +557,32 @@ def enforcement_digest(adapter):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def content_has_blocking_behavior(content, adapter):
+    """Conservatively reject marker-only/no-op blocking adapters.
+
+    Automatic blockers currently use the Claude/Codex JSON deny protocol.  We
+    intentionally require both a deterministic marker and executable-looking
+    protocol tokens.  This is a static gate, not execution of generated code.
+    """
+    digest = enforcement_digest(adapter)
+    marker = "rules-architect-blocking: {}".format(digest)
+    if marker not in content:
+        return False
+    code_lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        code_lines.append(stripped)
+    code = "\n".join(code_lines)
+    emitters = ("print(", "sys.stdout.write(", "console.log(", "printf ")
+    return (
+        "permissionDecision" in code
+        and "deny" in code
+        and any(emitter in code for emitter in emitters)
+    )
+
+
 def validate_automatic_implementation(errors, item, selected, where):
     group = item.get("report_group")
     if group not in {"hooks", "path_rules"}:
@@ -569,22 +609,38 @@ def validate_automatic_implementation(errors, item, selected, where):
         }
         if registered_adapters != expected_adapters:
             errors.append("{}：Hook registrations 与 enforcement 不一致".format(where))
-        combined_content = "\n".join(operation.get("content", "") for operation in writable)
         marker = "rules-architect-id: {}".format(item.get("rule_id"))
-        if marker not in combined_content:
-            errors.append("{}：Hook 内容缺少受管 rule_id 标记".format(where))
-        for adapter in item.get("enforcement", []):
-            enforcement_marker = "rules-architect-enforcement: {}".format(
-                enforcement_digest(adapter)
-            )
-            if enforcement_marker not in combined_content:
-                errors.append("{}：Hook 内容未绑定 enforcement 规格".format(where))
+        adapter_map = {
+            (adapter.get("platform"), adapter.get("event"), adapter.get("matcher")): adapter
+            for adapter in item.get("enforcement", [])
+        }
         for operation in writable:
             path = operation.get("path", "")
+            content = operation.get("content", "")
+            if marker not in content:
+                errors.append("{}：Hook 内容缺少受管 rule_id 标记".format(where))
             for registration in operation.get("registrations", []):
                 command = registration.get("command", "")
                 if path and str(path) not in command and Path(path).name not in command:
                     errors.append("{}：Hook registration 未引用对应脚本路径".format(where))
+                identity = (
+                    registration.get("platform"), registration.get("event"),
+                    registration.get("matcher"),
+                )
+                adapter = adapter_map.get(identity)
+                if not adapter:
+                    continue
+                enforcement_marker = "rules-architect-enforcement: {}".format(
+                    enforcement_digest(adapter)
+                )
+                if enforcement_marker not in content:
+                    errors.append("{}：Hook 内容未绑定 enforcement 规格".format(where))
+                if adapter.get("mode") == "block" and not content_has_blocking_behavior(
+                    content, adapter
+                ):
+                    errors.append(
+                        "{}：阻断型 Hook 缺少受管 blocking 标记或实际 deny 输出".format(where)
+                    )
     else:
         if any("/.claude/rules/" not in operation.get("path", "").replace("\\", "/") for operation in writable):
             errors.append("{}：Path Rule 写操作必须落在 .claude/rules 目录".format(where))
@@ -1037,8 +1093,13 @@ def example_contract():
             "content": (
                 "# rules-architect-id: R-example\n"
                 "# rules-architect-enforcement: {}\n"
-                "def main():\n    return 0\n"
-            ).format(enforcement_digest(adapter)),
+                "# rules-architect-blocking: {}\n"
+                "import json\n"
+                "def main():\n"
+                "    print(json.dumps({{\"hookSpecificOutput\": "
+                "{{\"permissionDecision\": \"deny\"}}}}))\n"
+                "    return 0\n"
+            ).format(enforcement_digest(adapter), enforcement_digest(adapter)),
             "reason": "示例自动 Hook",
             "requires_confirmation": False,
             "registrations": [{

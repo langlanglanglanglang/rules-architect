@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import Optional
 
 
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 MIN_CODEX_VERSION = "0.124.0"   # hooks engine stable as of v0.124.0
 
 # Codex event/matcher mapping. matcher=None → emit an entry with no "matcher"
@@ -196,6 +196,36 @@ def atomic_write(path: Path, content: str) -> None:
         except Exception:
             pass
         raise
+
+
+def capture_install_snapshot(paths):
+    snapshot = {}
+    for path in paths:
+        path = Path(path)
+        if path.is_symlink():
+            raise RuntimeError(f"拒绝安装到符号链接：{path}")
+        snapshot[path] = (
+            (path.read_bytes(), path.stat().st_mode & 0o777)
+            if path.is_file() else None
+        )
+    return snapshot
+
+
+def restore_install_snapshot(snapshot) -> None:
+    for path, previous in reversed(list(snapshot.items())):
+        if previous is None:
+            if path.is_file():
+                path.unlink()
+            continue
+        content, mode = previous
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=path.name + ".rollback.", dir=str(path.parent))
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
 
 
 # === Manifest (shared with CC installer; codex_* keys are additive) ===
@@ -340,8 +370,11 @@ def _adopt_registration(manifest: dict, event, matcher, command) -> None:
     tracked = manifest.setdefault("codex_hooks_added", [])
     if not any(e.get("event") == event and e.get("matcher") == matcher
                and e.get("command") == command for e in tracked):
-        tracked.append({"event": event, "matcher": matcher,
-                        "command": command, "owner": "rules-architect"})
+        tracked.append({
+            "platform": "codex", "config_path": str(HOOKS_JSON),
+            "event": event, "matcher": matcher,
+            "command": command, "owner": "rules-architect",
+        })
         info(f"hooks.json：{event} 已补录到 Manifest")
 
 
@@ -467,6 +500,10 @@ def merge_hooks_json(
                      "请使用 --force 或交互模式重试。")
                 skipped_conflicts.append((event, matcher))
                 continue
+
+    for registration in added_this_run:
+        registration.setdefault("platform", "codex")
+        registration.setdefault("config_path", str(HOOKS_JSON))
 
     def _note_skips():
         for event, matcher in skipped_conflicts:
@@ -638,6 +675,12 @@ def main() -> int:
     manifest = load_manifest(args.dry_run)
     if backup_path:
         manifest["codex_hooks_backup_path"] = backup_path
+    install_snapshot = None
+    if not args.dry_run:
+        install_snapshot = capture_install_snapshot(
+            [HOOKS_DEST / name for name, _ in CODEX_HOOK_TEMPLATES]
+            + [HOOKS_JSON, MANIFEST_PATH]
+        )
 
     template_vars = {
         "SKILL_VERSION": SKILL_VERSION,
@@ -648,31 +691,66 @@ def main() -> int:
     print("\n--- 安装 Hook 文件 ---")
     registerable = set()
     for template_name, _ in CODEX_HOOK_TEMPLATES:
-        status = install_hook_file(
-            template_name, template_vars, manifest,
-            args.dry_run, args.force,
-            interactive=not args.non_interactive
-        )
+        try:
+            status = install_hook_file(
+                template_name, template_vars, manifest,
+                args.dry_run, args.force,
+                interactive=not args.non_interactive
+            )
+        except Exception as exc:
+            if install_snapshot is not None:
+                restore_install_snapshot(install_snapshot)
+            err(f"Hook 安装异常，已回滚：{exc}")
+            return 3
         if status == "abort":
+            if install_snapshot is not None:
+                restore_install_snapshot(install_snapshot)
             err("Hook 安装失败。")
             return 3
         if status == "ok":
             registerable.add(template_name)
+            if not args.dry_run:
+                try:
+                    save_manifest(manifest)
+                except Exception as exc:
+                    restore_install_snapshot(install_snapshot)
+                    err(f"Manifest 写入失败，已回滚：{exc}")
+                    return 3
 
     print("\n--- 合并 hooks.json ---")
-    merge_ok, n_added, n_skipped = merge_hooks_json(
-        manifest, args.dry_run, args.force,
-        interactive=not args.non_interactive,
-        registerable=registerable)
+    try:
+        merge_ok, n_added, n_skipped = merge_hooks_json(
+            manifest, args.dry_run, args.force,
+            interactive=not args.non_interactive,
+            registerable=registerable)
+    except Exception as exc:
+        if install_snapshot is not None:
+            restore_install_snapshot(install_snapshot)
+        err(f"hooks.json 合并异常，已回滚：{exc}")
+        return 4
     if not merge_ok:
+        if install_snapshot is not None:
+            restore_install_snapshot(install_snapshot)
         err("hooks.json 合并失败。")
         return 4
+    if not args.dry_run:
+        try:
+            save_manifest(manifest)
+        except Exception as exc:
+            restore_install_snapshot(install_snapshot)
+            err(f"Manifest 写入失败，已回滚：{exc}")
+            return 4
 
     if not args.dry_run:
         manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         manifest["skill_version"] = SKILL_VERSION
         manifest["min_codex_version"] = MIN_CODEX_VERSION
-        save_manifest(manifest)
+        try:
+            save_manifest(manifest)
+        except Exception as exc:
+            restore_install_snapshot(install_snapshot)
+            err(f"Manifest 最终写入失败，已回滚：{exc}")
+            return 4
         ok(f"Manifest 已保存 → {MANIFEST_PATH}")
 
     if not args.dry_run:

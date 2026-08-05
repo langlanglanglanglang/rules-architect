@@ -144,6 +144,10 @@ Hook enforcement 首版只允许两种模式：
 - `block`：PreToolUse 前可确定性判定并阻断；必须提供 platform/event/matcher/predicate
 - `remind`：只注入上下文，不得称为强制
 
+自动应用的 `block` Hook 必须在对应脚本内同时包含确定性的 enforcement/blocking
+标记和实际 `permissionDecision: deny` 协议输出；只有注释标记或 `return 0` 的空实现
+必须拒绝。一次推荐绑定的多个 operation 是不可拆执行单元，部分执行必须完整选择。
+
 正文与适配器分离。一条团队规则可以以 `AGENTS.md` 为 canonical，同时派生
 Claude/Codex Hook；不得因为推荐 Hook 就删除唯一正文。
 
@@ -228,17 +232,23 @@ python3 "$ra_skill_dir/scripts/apply_reconciliation.py" \
 
 任何实际执行前先省略 `--yes` 预览所选操作。修改、禁用、删除需再次向用户列出
 目标并确认；应用完成后重新扫描一次，展示规则已收敛后的结果。
-部分执行只选择报告中明确列出的独立 operation。`move` 不会出现在自动操作中，
+部分执行只选择报告中明确列出的独立 operation；同一推荐绑定的多个 operation
+必须一起选择。`move` 不会出现在自动操作中，
 必须由用户另行确认并人工完成。
 
 应用器会重扫指纹、复核所有权与目标哈希，只写允许目录，不跟随符号链接，并在
 成功后只把本次实际成功的 operation/rule ID 写入当前事务，并把 fingerprint/digest
 追加到有界历史；空操作不写 Manifest 或状态。增改禁删必须由 `operations` 明确描述；
 不得绕过应用器直接执行报告中的推测动作。
+对现有 Hook/Path Rule 执行 `delete` 时，应用器必须把文件本体直接移动到
+`~/.claude/rules-architect-backups/`，不得复制后再删除。`update`、`disable` 或
+Hook 配置变更则先复制当前快照再修改。索引包含原路径、内容哈希、权限、操作来源和
+`moved/copied` 处置类型；归档失败时禁止变更并回滚本轮事务。
 预览与实际执行使用同一套路径、配置、Manifest、state 和目标哈希预检。旧 schema
 1.0/1.1 仅可查看；实际应用必须重新生成 `schema_version: 1.2`、`plan_status: ready`
 的方案。Hook create/update 的 `registrations` 表示完整期望集合，应用器按集合差异
 保留、删除或新增注册，不会根据单个注册推断并删除其他有效入口。
+执行中任一步失败时，应用器恢复本轮触及的 Hook/Path Rule、配置、Manifest 和状态。
 
 ## 安装与迁移流程（由当前平台的主代理编排）
 
@@ -266,7 +276,7 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/before.jso
 
 | 模式 | 内容 |
 |---|---|
-| **D**. 仅诊断 | 不改文件（首次跑最安全） |
+| **D**. 仅诊断 | bootstrap 使用自动清理的临时 checkout，不产生持久化安装 |
 | **C**. 仅 path-scoped | 在当前项目加 `rule-intake.md` |
 | **B**. 仅 hook | 装 3 个核心 hook（memory_intake / rule_intake / cleanup） |
 | **A**. 全量安装 | B + rule-intake + §六 + 交互式 memory 升级 |
@@ -309,6 +319,7 @@ python3 "$ra_skill_dir/scripts/install_hooks.py" --non-interactive
      ```bash
      python3 "$ra_skill_dir/scripts/mark_memory_promoted.py" \
          --feedback <feedback_name> \
+         --memory-dir <步骤一确认的精确-memory-目录> \
          --target "L0 hook ~/.claude/hooks/<stem>.py"
      ```
 
@@ -388,9 +399,9 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 
 本 skill **绝不在未经明确同意时**修改你的现有内容。所有改动都记录到 `~/.claude/.rules-architect-manifest.json`，支持精准回滚。
 
-**绝不动**：
+**默认扫描与安装绝不动**：
 
-- L1 memory 文件（你的私人笔记）
+- L1 memory 文件（仅在逐条确认升级、展示精确目录并备份后，允许把该条正文替换为 stub）
 - CLAUDE.md 正文
 - CLAUDE-personal.md 中 `<!-- rules-architect:section-6 BEGIN/END -->` 标记外的所有内容
 - 你现有的 `~/.claude/settings.json` 条目（deep-merge 保留所有其它项）
@@ -433,6 +444,7 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 │   ├── install_personal_md_section.py    # 加 §六 到 CLAUDE-personal.md
 │   ├── install_hook_from_memory.py       # 从 memory 生成 hook
 │   ├── mark_memory_promoted.py           # 标记 memory 已升级为 stub
+│   ├── record_skill_install.py            # 记录 bootstrap 创建的 Skill 入口
 │   ├── uninstall.py                      # 按 manifest 精准回滚
 │   └── memory_sync.py                    # memory → 团队 lessons（仅 push）
 ├── templates/
@@ -466,11 +478,11 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 
 ```json
 {
-  "skill_version": "2.4.0",
+  "skill_version": "2.5.0",
   "installed_at": "2026-06-12T...",
   "files": [
     {"path": "~/.claude/hooks/memory_intake_check.py",
-     "hash": "sha256...", "owner": "rules-architect", "version": "2.4.0"}
+     "hash": "sha256...", "owner": "rules-architect", "version": "2.5.0"}
   ],
   "settings_hooks_added": [
     {"event": "PreToolUse", "matcher": "Write|Edit|MultiEdit",
@@ -479,7 +491,11 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 }
 ```
 
-`uninstall.py` **只删 manifest 里的项目**（精准回滚，**不是**全量备份还原）。
+`uninstall.py` **只处理 manifest 里的项目**。受管 Hook、Path Rule 等完整文件通过
+移动到带索引的恢复归档完成卸载，不执行“复制后删除”；Hook 配置和将被裁剪的
+个人 Markdown 文件因仍需保留原文件，采用修改前复制快照。归档失败即保留原文件和
+Manifest 跟踪项。恢复归档默认位于
+`~/.claude/rules-architect-backups/`，可用 `RULES_ARCHITECT_RECOVERY_DIR` 改址。
 
 ## 输出约定
 
@@ -489,7 +505,8 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 2. **结果**（成功/失败 + 详情）
 3. **下一步动作**（失败时停下）
 
-目标配置损坏时,pre-flight 校验会在写任何文件**之前**中止;其余失败场景按 manifest 用 uninstall 精准回滚(并非自动事务,中途失败请查 manifest)。
+目标配置损坏时，pre-flight 校验会在写任何文件**之前**中止；安装器和应用器在普通
+异常退出时恢复本轮快照。进程被强制终止等无法捕获的场景仍按 Manifest 精准卸载。
 
 ## 引用
 

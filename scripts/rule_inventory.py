@@ -24,7 +24,7 @@ except (ImportError, ValueError):
 
 
 SCHEMA_VERSION = "1.1"
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 DEFAULT_MAX_FILE_BYTES = 256 * 1024
 DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_FILES = 200
@@ -428,7 +428,7 @@ class InventoryBuilder:
             self.skip(resolved, "truncated")
         if kind in {
             "claude_md", "agents_md", "path_rule", "memory_index",
-            "memory_feedback", "memory_reference", "lessons",
+            "memory_feedback", "memory_reference", "memory_topic", "lessons",
         }:
             self.extract_markdown_candidates(source, text)
         return source
@@ -491,10 +491,14 @@ class InventoryBuilder:
             value = " ".join(p.strip() for p in paragraph if p.strip())
             start = paragraph_start
             del paragraph[:]
-            if not value or not NORMATIVE_RE.search(value):
+            if not value:
                 return
+            confidence = "high" if NORMATIVE_RE.search(value) else "medium"
+            if source["kind"] in {"memory_index", "lessons"} \
+                    and not NORMATIVE_RE.search(value):
+                confidence = "low"
             self.add_candidate(
-                source, value, start, end_line, current_headings(), "high"
+                source, value, start, end_line, current_headings(), confidence
             )
 
         idx = 0
@@ -566,11 +570,12 @@ class InventoryBuilder:
                 continue
             if stripped.startswith("|") and stripped.endswith("|"):
                 flush_paragraph(line_no - 1)
-                if NORMATIVE_RE.search(stripped):
-                    cells = [c.strip() for c in stripped.strip("|").split("|")]
+                cells = [c.strip() for c in stripped.strip("|").split("|")]
+                if cells and not all(re.fullmatch(r":?-{3,}:?", c or "") for c in cells):
                     self.add_candidate(
                         source, " | ".join(cells), line_no, line_no,
-                        current_headings(), "medium"
+                        current_headings(),
+                        "high" if NORMATIVE_RE.search(stripped) else "medium"
                     )
                 idx += 1
                 continue
@@ -771,7 +776,7 @@ class InventoryBuilder:
             elif name.startswith("reference_"):
                 kind = "memory_reference"
             else:
-                continue
+                kind = "memory_topic"
             self.add_source(path, kind, "claude", "private")
 
     def discover_hook_config(self, config_path, platform, scope):

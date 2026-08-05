@@ -24,7 +24,7 @@ They are designed to coexist. `rules-architect` actively delegates L3 (CLAUDE.md
 | **Modifies settings.json** | No | Yes (registers hooks, with manifest-based rollback) |
 | **L3 CLAUDE.md content audit** | ✅ Specialty (6-criteria A–F grading) | ❌ Explicitly delegates to claude-md-improver |
 | **L1 memory management** | ❌ | ✅ 5-Q SOP / upgrade / retire / team sync |
-| **L0 hook real-time interception** | ❌ | ✅ 4–5 generic hooks |
+| **L0 hook real-time interception** | ❌ | ✅ 3 core Hooks; project workflow Hooks are examples only |
 | **L2 path-scoped edit-triggered injection** | ❌ | ✅ `rule-intake.md` |
 | **L5 team lessons sync** | ❌ | ✅ `memory_sync.py` |
 
@@ -34,7 +34,7 @@ They are designed to coexist. `rules-architect` actively delegates L3 (CLAUDE.md
 |---|---|---|
 | Stale build command in CLAUDE.md | ✅ Detects + proposes fix | ❌ Doesn't care about content |
 | A rule keeps being forgotten in memory | ❌ Doesn't look at memory | ✅ 5-Q SOP → upgrade to L0 hook |
-| Forgetting status summary after PR creation | ❌ | ✅ `mr_created_reminder` hook intercepts in real-time |
+| Forgetting status summary after PR creation | ❌ | ⚠️ Derive from the optional `mr_created_reminder` example; not installed by default |
 | CLAUDE.md too long, attention diluted | ⚠️ Conciseness grade only | ✅ 5-Q SOP pushes rules down to L2 path-scoped |
 | Personal memory ↔ team lessons sync | ❌ | ✅ `memory_sync.py` (push only, by design) |
 | Comprehensive CLAUDE.md audit | ✅ **Its specialty** | ❌ Delegates |

@@ -105,6 +105,11 @@ artifact IDs, paths, and complete enforcement adapters. Record the user's choice
 `decision_source: user_confirmed`, then regenerate a
 `plan_status: ready` final plan. Final recommendations forbid `review`, a
 non-empty `unclassified`, unresolved choices, and low confidence.
+Every discovered Hook and Path Rule artifact receives exactly one final
+decision. External-tool and unknown-owned artifacts, plus managed artifacts
+whose hash changed locally, may only be kept or reused; they are never updated,
+disabled, or deleted automatically. Prefer reusing a semantically equivalent
+existing Hook over creating a duplicate.
 
 Every final recommendation and artifact decision cross-references its
 `operation_ids`. Mutating automatic conclusions require matching operations;
@@ -120,6 +125,10 @@ canonical body separate from delivery/enforcement adapters.
 Milestone-one enforcement modes are `block` and `remind`.
 Only a pre-action, deterministically observable and testable predicate may be
 called `block`. An additional-context hook is `remind`, not enforcement.
+An automatically applied blocker must include deterministic enforcement and
+blocking markers plus an actual `permissionDecision: deny` protocol output in
+the corresponding script. Marker-only or `return 0` implementations are
+rejected. Multiple operations bound to one recommendation are indivisible.
 
 ### Step R3: Validate the contract
 
@@ -156,6 +165,12 @@ only operations that actually succeeded. Preview and apply share the same
 path/config/state/hash preflight. Legacy schemas remain viewable, but applying
 requires a schema 1.2 ready plan. Options 4/5/6 are main-agent workflows:
 regenerate, export the current JSON, or rescan and invalidate the stale plan.
+For `delete`, the applier moves the Hook or Path Rule itself into
+`~/.claude/rules-architect-backups/`; it does not copy and then delete it.
+Updates, disables, and config edits copy a pre-mutation snapshot because the
+original path remains in use. The index records original path, hash, mode,
+operation source, and `moved`/`copied` disposition. Archive failure blocks and
+rolls back the transaction.
 
 ## Installation and Migration Flow (orchestrated by the current platform's main agent)
 
@@ -184,7 +199,7 @@ Display the architecture and SOP. Briefly explain what migrating a memory entry 
 
 | Mode | What |
 |---|---|
-| **D**. Diagnose only | No changes (safest first run) |
+| **D**. Diagnose only | Bootstrap uses an auto-cleaned temporary checkout; no persistent install |
 | **C**. Path-scoped only | Add `rule-intake.md` to current project |
 | **B**. Hooks only | Install 3 core hooks (memory_intake / rule_intake / cleanup) |
 | **A**. Full install | All of B + rule-intake + §六 + interactive memory migration |
@@ -227,6 +242,7 @@ Read the `upgrade_candidates` from Step 1. **For each candidate**:
      ```bash
      python3 "$ra_skill_dir/scripts/mark_memory_promoted.py" \
          --feedback <feedback_name> \
+         --memory-dir <exact-memory-directory-confirmed-in-step-1> \
          --target "L0 hook ~/.claude/hooks/<stem>.py"
      ```
 
@@ -302,8 +318,9 @@ Remove `$ra_install_dir` after presenting the comparison.
 
 This skill **never modifies your existing content** without explicit consent. All changes are tracked in `~/.claude/.rules-architect-manifest.json` for precise rollback.
 
-**Never touched**:
-- L1 memory files (your private notes)
+**Never touched by default scans and installs**:
+- L1 memory files, except that an individually confirmed promotion may replace
+  that exact entry with a stub after showing the exact directory and creating a backup
 - CLAUDE.md content
 - CLAUDE-personal.md sections outside `<!-- rules-architect:section-6 BEGIN/END -->` markers
 - Your existing `~/.claude/settings.json` entries (deep-merge preserves them)
@@ -335,10 +352,14 @@ This skill **never modifies your existing content** without explicit consent. Al
 │   ├── rule_inventory.py                  # Platform-aware read-only candidates
 │   ├── recommendation_contract.py         # Validate coverage + safety contract
 │   ├── render_distribution.py             # Render the five report groups
+│   ├── apply_reconciliation.py             # Preview/apply with rollback
+│   ├── state_store.py                      # Private convergence state
 │   ├── install_hooks.py                  # Deep-merge into settings.json
+│   ├── install_codex_hooks.py            # Deep-merge into Codex hooks.json
 │   ├── install_rule_intake.py            # Project-level path-scoped install
 │   ├── install_personal_md_section.py    # Add §六 to CLAUDE-personal.md
 │   ├── uninstall.py                      # Roll back per manifest
+│   ├── record_skill_install.py           # Track bootstrap-created Skill entries
 │   └── memory_sync.py                    # Memory → team lessons (push only)
 ├── templates/
 │   ├── hooks/
@@ -367,11 +388,11 @@ This skill **never modifies your existing content** without explicit consent. Al
 `~/.claude/.rules-architect-manifest.json` tracks every installed file:
 ```json
 {
-  "skill_version": "2.4.0",
+  "skill_version": "2.5.0",
   "installed_at": "2026-06-12T...",
   "installed_files": [
     {"path": "~/.claude/hooks/memory_intake_check.py",
-     "hash_sha256": "sha256...", "owner": "rules-architect", "template_version": "2.4.0"}
+     "hash_sha256": "sha256...", "owner": "rules-architect", "template_version": "2.5.0"}
   ],
   "settings_hooks_added": [
     {"event": "PreToolUse", "matcher": "Write|Edit|MultiEdit",
@@ -380,7 +401,13 @@ This skill **never modifies your existing content** without explicit consent. Al
 }
 ```
 
-`uninstall.py` removes only items in manifest (precise rollback, NOT full backup restore).
+`uninstall.py` only processes manifest-tracked items. Managed Hook and Path
+Rule files are uninstalled by moving the original file into an indexed recovery
+archive, never by copy-then-delete. Hook configs and trimmed personal Markdown
+files use pre-mutation copies because the original file remains. A failed
+archive operation blocks the mutation and keeps the manifest entry. Archives default to
+`~/.claude/rules-architect-backups/`; `RULES_ARCHITECT_RECOVERY_DIR` overrides
+that location.
 
 ## Output Convention
 

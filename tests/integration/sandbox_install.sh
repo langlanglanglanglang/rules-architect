@@ -254,6 +254,37 @@ if [ -f "$HOME/.claude/.rules-architect-manifest.json" ]; then
 fi
 echo "  ✅ Manifest archived"
 
+# Every removed managed file/config must be recoverable from the uninstall
+# archive. The index keeps original paths, hashes, permissions, and archive
+# locations; the pre-uninstall Manifest is preserved beside it.
+python3 -c "
+import json
+from pathlib import Path
+root = Path('$HOME/.claude/rules-architect-backups')
+archives = sorted(root.glob('*-uninstall-*'))
+assert len(archives) == 1, f'expected one uninstall archive, got {archives}'
+archive = archives[0]
+index = json.loads((archive / 'index.json').read_text())
+paths = {entry['original_path'] for entry in index['files']}
+for name in ['memory_intake_check.py', 'rule_intake_reminder.py', 'cleanup_hook.py', 'sandbox_test_hook.py']:
+    expected = str(Path('$HOME/.claude/hooks') / name)
+    assert expected in paths, f'missing recovery entry: {expected}'
+assert str(Path('$HOME/.claude/settings.json').resolve()) in paths
+assert (archive / 'manifest.before.json').is_file()
+for entry in index['files']:
+    assert (archive / entry['archive_path']).is_file(), entry
+hook_paths = {
+    str(Path('$HOME/.claude/hooks') / name)
+    for name in ['memory_intake_check.py', 'rule_intake_reminder.py', 'cleanup_hook.py', 'sandbox_test_hook.py']
+}
+for entry in index['files']:
+    if entry['original_path'] in hook_paths or entry['original_path'].endswith('/.claude/rules/rule-intake.md'):
+        assert entry['disposition'] == 'moved', entry
+    else:
+        assert entry['disposition'] == 'copied', entry
+print('  ✅ Retired hooks were moved and config snapshots were copied into a verified recovery archive')
+"
+
 # rule-intake.md should NOT be removed (project-level, hash mismatch protection
 # requires it be tracked but file may persist if user-modified — in this test
 # we didn't modify so it should be gone)

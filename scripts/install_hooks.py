@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Optional
 
 
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 MIN_CC_VERSION = "1.5.0"   # UserPromptSubmit hook required
 
 # Core hooks: SOP injection + base infrastructure.
@@ -167,6 +167,36 @@ def atomic_write(path: Path, content: str) -> None:
         except Exception:
             pass
         raise
+
+
+def capture_install_snapshot(paths):
+    snapshot = {}
+    for path in paths:
+        path = Path(path)
+        if path.is_symlink():
+            raise RuntimeError(f"拒绝安装到符号链接：{path}")
+        snapshot[path] = (
+            (path.read_bytes(), path.stat().st_mode & 0o777)
+            if path.is_file() else None
+        )
+    return snapshot
+
+
+def restore_install_snapshot(snapshot) -> None:
+    for path, previous in reversed(list(snapshot.items())):
+        if previous is None:
+            if path.is_file():
+                path.unlink()
+            continue
+        content, mode = previous
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=path.name + ".rollback.", dir=str(path.parent))
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
 
 
 # === Manifest ===
@@ -372,8 +402,11 @@ def merge_settings(
                 tracked = manifest.setdefault("settings_hooks_added", [])
                 if not any(e.get("event") == event and e.get("matcher") == matcher
                            and e.get("command") == command for e in tracked):
-                    tracked.append({"event": event, "matcher": matcher,
-                                    "command": command, "owner": "rules-architect"})
+                    tracked.append({
+                        "platform": "claude", "config_path": str(SETTINGS_PATH),
+                        "event": event, "matcher": matcher,
+                        "command": command, "owner": "rules-architect",
+                    })
                     info(f"settings.json：{event}/{matcher} 已补录到 Manifest")
                 continue
             # Different command at same matcher — conflict
@@ -392,19 +425,11 @@ def merge_settings(
                     print(f"    {c}")
                 print(f"  准备添加：{command}")
                 choice = input(
-                    "  [a] 追加  [s] 跳过  [r] 全部替换，其他输入中止：").strip().lower()
+                    "  [a] 追加  [s] 跳过，其他输入中止：").strip().lower()
                 if choice == "a":
                     existing_entry["hooks"].append(
                         {"type": "command", "command": command}
                     )
-                    settings_added_this_run.append({
-                        "event": event, "matcher": matcher,
-                        "command": command, "owner": "rules-architect",
-                    })
-                elif choice == "r":
-                    existing_entry["hooks"] = [
-                        {"type": "command", "command": command}
-                    ]
                     settings_added_this_run.append({
                         "event": event, "matcher": matcher,
                         "command": command, "owner": "rules-architect",
@@ -416,6 +441,10 @@ def merge_settings(
                 warn(f"settings.json：{event}/{matcher} 存在冲突，已跳过。"
                      "请使用 --force 或交互模式重试。")
                 continue
+
+    for registration in settings_added_this_run:
+        registration.setdefault("platform", "claude")
+        registration.setdefault("config_path", str(SETTINGS_PATH))
 
     if not settings_added_this_run:
         info("settings.json：无需修改")
@@ -642,6 +671,12 @@ def main() -> int:
     manifest = load_manifest(args.dry_run)
     if backup_path:
         manifest["settings_backup_path"] = backup_path
+    install_snapshot = None
+    if not args.dry_run:
+        install_snapshot = capture_install_snapshot(
+            [HOOKS_DEST / name for name, _ in HOOK_TEMPLATES]
+            + [SETTINGS_PATH, MANIFEST_PATH]
+        )
 
     # 4. Template vars
     template_vars = {
@@ -655,35 +690,73 @@ def main() -> int:
     all_ok = True
     registerable = set()
     for template_name, _ in HOOK_TEMPLATES:
-        status = install_hook_file(
-            template_name, template_vars, manifest,
-            args.dry_run, args.force,
-            interactive=not args.non_interactive
-        )
+        try:
+            status = install_hook_file(
+                template_name, template_vars, manifest,
+                args.dry_run, args.force,
+                interactive=not args.non_interactive
+            )
+        except Exception as exc:
+            if install_snapshot is not None:
+                restore_install_snapshot(install_snapshot)
+            err(f"Hook 安装异常，已回滚：{exc}")
+            return 3
         if status == "abort":
             all_ok = False
             break
         if status == "ok":
             registerable.add(template_name)
+            if not args.dry_run:
+                try:
+                    save_manifest(manifest)
+                except Exception as exc:
+                    restore_install_snapshot(install_snapshot)
+                    err(f"Manifest 写入失败，已回滚：{exc}")
+                    return 3
 
     if not all_ok:
+        if install_snapshot is not None:
+            restore_install_snapshot(install_snapshot)
         err("Hook 安装失败。备份位置：" + str(backup_path or "无"))
         return 3
 
     # 6. Merge settings.json
     print("\n--- 合并 settings.json ---")
-    if not merge_settings(manifest, args.dry_run, args.force,
-                          interactive=not args.non_interactive,
-                          registerable=registerable):
+    try:
+        merge_ok = merge_settings(
+            manifest, args.dry_run, args.force,
+            interactive=not args.non_interactive,
+            registerable=registerable,
+        )
+    except Exception as exc:
+        if install_snapshot is not None:
+            restore_install_snapshot(install_snapshot)
+        err(f"settings.json 合并异常，已回滚：{exc}")
+        return 4
+    if not merge_ok:
+        if install_snapshot is not None:
+            restore_install_snapshot(install_snapshot)
         err("settings.json 合并失败。")
         return 4
+    if not args.dry_run:
+        try:
+            save_manifest(manifest)
+        except Exception as exc:
+            restore_install_snapshot(install_snapshot)
+            err(f"Manifest 写入失败，已回滚：{exc}")
+            return 4
 
     # 7. Save manifest
     if not args.dry_run:
         manifest["last_install_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         manifest["skill_version"] = SKILL_VERSION
         manifest["min_cc_version"] = MIN_CC_VERSION
-        save_manifest(manifest)
+        try:
+            save_manifest(manifest)
+        except Exception as exc:
+            restore_install_snapshot(install_snapshot)
+            err(f"Manifest 最终写入失败，已回滚：{exc}")
+            return 4
         ok(f"Manifest 已保存 → {MANIFEST_PATH}")
 
     # 7.5. Check claude-md-management plugin (L3 audit)

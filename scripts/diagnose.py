@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 
 
 # === Platform abstraction ===
@@ -162,23 +162,24 @@ def scan_l0_hooks() -> dict:
 
 
 # === L1: Memory scan ===
-def find_memory_dirs() -> list:
-    root = get_projects_root()
-    if not root.exists():
-        return []
-    found = []
-    for project_dir in root.iterdir():
-        if not project_dir.is_dir():
-            continue
-        mem = project_dir / "memory"
-        if mem.is_dir() and (mem / "MEMORY.md").exists():
-            try:
-                mtime = mem.stat().st_mtime
-                found.append((mtime, mem))
-            except Exception:
-                continue
-    found.sort(reverse=True)
-    return [m for _, m in found]
+def mapped_memory_dirs(project_root=None) -> list:
+    root = Path(project_root or Path.cwd()).expanduser().resolve()
+    candidates = [root]
+    try:
+        repo = Path(subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()).resolve()
+        if repo != root:
+            candidates.append(repo)
+    except Exception:
+        pass
+    projects = get_projects_root()
+    return [
+        projects / str(candidate).replace(os.sep, "-") / "memory"
+        for candidate in candidates
+        if (projects / str(candidate).replace(os.sep, "-") / "memory").is_dir()
+    ]
 
 
 # Patterns suggesting a memory entry should be upgraded to a hook
@@ -233,11 +234,11 @@ def detect_upgrade_candidates(memory_dir: Path) -> list:
     return candidates
 
 
-def scan_l1_memory(memory_dir_override: str = None) -> dict:
+def scan_l1_memory(memory_dir_override: str = None, project_root=None) -> dict:
     if memory_dir_override:
         memory_dirs = [Path(memory_dir_override).expanduser()]
     else:
-        memory_dirs = find_memory_dirs()
+        memory_dirs = mapped_memory_dirs(project_root)
 
     if not memory_dirs:
         return {
@@ -493,7 +494,7 @@ def estimate_token_injection() -> int:
             except Exception:
                 continue
     # Add MEMORY.md
-    mem_dirs = find_memory_dirs()
+    mem_dirs = mapped_memory_dirs(Path.cwd())
     if mem_dirs:
         idx = mem_dirs[0] / "MEMORY.md"
         if idx.exists():
@@ -514,7 +515,7 @@ def full_report(args) -> dict:
         "cwd": str(Path.cwd()),
         "layers": {
             "L0_hooks": scan_l0_hooks(),
-            "L1_memory": scan_l1_memory(args.memory_dir),
+            "L1_memory": scan_l1_memory(args.memory_dir, args.project_root),
             "L2_path_scoped": scan_l2_rules(args.rules_dir),
             "L3_claude_md": scan_l3_claude_md(),
             "L5_team_lessons": scan_l5_lessons(args.lessons_path),
@@ -654,6 +655,8 @@ def main() -> int:
     ap.add_argument("--json", action="store_true",
                     help="输出结构化 JSON（供 CI 或脚本使用）")
     ap.add_argument("--memory-dir", help="指定要扫描的 Claude Code 记忆目录")
+    ap.add_argument("--project-root", default=str(Path.cwd()),
+                    help="用于精确映射记忆目录的项目根目录（默认当前目录）")
     ap.add_argument("--rules-dir", help="指定要扫描的 .claude/rules/ 目录")
     ap.add_argument("--lessons-path", help="团队 lessons.md 路径")
     args = ap.parse_args()

@@ -8,9 +8,11 @@ history for retrieval if needed.
 
 Usage:
   mark_memory_promoted.py --feedback feedback_no_mid_task_pause \\
+      --memory-dir ~/.claude/projects/<project>/memory \\
       --target "L0 hook ~/.claude/hooks/no_mid_task_pause.py"
 
   mark_memory_promoted.py --feedback feedback_no_mid_task_pause \\
+      --memory-dir ~/.claude/projects/<project>/memory \\
       --target "L3 CLAUDE-personal.md §一.7"
       --dry-run
 """
@@ -45,25 +47,9 @@ def atomic_write(path, content):
         raise
 
 
-def find_memory_dirs():
-    root = Path.home() / ".claude" / "projects"
-    if not root.exists():
-        return []
-    out = []
-    for d in root.iterdir():
-        m = d / "memory"
-        if m.is_dir():
-            out.append((m.stat().st_mtime, m))
-    out.sort(reverse=True)
-    return [m for _, m in out]
-
-
-def find_memory_file(feedback_name, memory_dir_override=None):
-    """Try to find the feedback file across all memory dirs."""
-    if memory_dir_override:
-        dirs = [Path(memory_dir_override)]
-    else:
-        dirs = find_memory_dirs()
+def find_memory_file(feedback_name, memory_dir_override):
+    """Resolve only inside the explicitly confirmed memory directory."""
+    dirs = [Path(memory_dir_override).expanduser().resolve()]
     candidates = []
     for d in dirs:
         for ext in [".md", ""]:
@@ -79,20 +65,19 @@ def main():
                     help="记忆反馈名称（例如 feedback_no_mid_task_pause）")
     ap.add_argument("--target", required=True,
                     help="已提升到的位置（自由文本说明）")
-    ap.add_argument("--memory-dir",
-                    help="指定记忆目录")
+    ap.add_argument("--memory-dir", required=True,
+                    help="已确认的精确记忆目录（必填）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     candidates = find_memory_file(args.feedback, args.memory_dir)
     if not candidates:
         err(f"未找到记忆文件：{args.feedback}")
-        info("已搜索：")
-        for d in find_memory_dirs():
-            info(f"  {d}")
+        info(f"已搜索：{Path(args.memory_dir).expanduser()}")
         return 1
     if len(candidates) > 1:
-        warn(f"找到多个匹配项，将使用第一个：{candidates[0]}")
+        err("同一记忆目录内找到多个匹配项，已拒绝猜测目标")
+        return 1
     path = candidates[0]
 
     text = path.read_text()

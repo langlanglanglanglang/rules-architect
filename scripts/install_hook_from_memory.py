@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = SKILL_DIR / "templates" / "hooks" / "generated-hook-skeleton.py.tmpl"
 HOOKS_DEST = Path.home() / ".claude" / "hooks"

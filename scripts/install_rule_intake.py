@@ -28,11 +28,12 @@ import time
 from pathlib import Path
 
 
-SKILL_VERSION = "2.4.0"
+SKILL_VERSION = "2.5.0"
 DEFAULT_PATHS = [
     "**/MEMORY.md",
     "**/feedback_*.md",
     "**/reference_*.md",
+    "**/memory/*.md",
     "**/.claude/rules/*.md",
     "**/CLAUDE.md",
     "**/CLAUDE-personal.md",

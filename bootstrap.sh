@@ -13,7 +13,7 @@
 #   --install-dir <路径>  主仓库克隆位置（默认使用所选平台的 Skill 目录；
 #                         同时选择时使用 Claude 目录）
 #   --mode <D|C|B|A>      克隆后的安装模式（默认 B = 核心 Hook）
-#                          D = 仅诊断，不安装 Hook
+#                          D = 临时只读诊断，不安装 Skill/Hook/规则
 #                          C = 仅安装 Claude 路径规则
 #                          B = 安装所选平台的 Hook（默认）
 #                          A = B + Claude 路径规则 + §六
@@ -127,6 +127,25 @@ echo "   安装模式：$MODE"
 echo
 echo "  ✅ 已找到 git 和 python3"
 
+# D 模式必须保持用户安装目录零改动：在私有临时 checkout 中运行平台感知扫描，
+# 不创建 Skill 入口、不写 Manifest，也不安装 Hook。
+if [ "$MODE" = "D" ]; then
+  RA_DIAG_DIR="$(mktemp -d)"
+  trap 'rm -rf "$RA_DIAG_DIR"' EXIT
+  git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$RA_DIAG_DIR/source"
+  if [ -n "$TAG" ]; then
+    git -C "$RA_DIAG_DIR/source" fetch --tags
+    git -C "$RA_DIAG_DIR/source" checkout "tags/$TAG"
+  fi
+  RA_DIAG_PLATFORM="$PLATFORMS"
+  [ "$RA_DIAG_PLATFORM" = "claude,codex" ] && RA_DIAG_PLATFORM="both"
+  python3 "$RA_DIAG_DIR/source/scripts/rule_inventory.py" \
+    --project-root "$PWD" --platform "$RA_DIAG_PLATFORM"
+  echo
+  echo "✨ 只读诊断完成；未安装 Skill、Hook 或规则。"
+  exit 0
+fi
+
 validate_skill_target() {
   local target_dir="$1"
   if [ "$target_dir" = "$INSTALL_DIR" ]; then
@@ -150,6 +169,7 @@ if platform_selected codex; then
 fi
 
 # === 2. Clone or pull canonical source ===
+CHECKOUT_CREATED=0
 if [ -e "$INSTALL_DIR" ]; then
   if [ "$SKIP_PULL" -eq 1 ]; then
     echo "❌ $INSTALL_DIR 已存在；--skip-clone-pull 禁止更新它。" >&2
@@ -171,6 +191,7 @@ else
   mkdir -p "$(dirname "$INSTALL_DIR")"
   echo "  📦 正在克隆 $REPO_URL → $INSTALL_DIR"
   git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  CHECKOUT_CREATED=1
 fi
 
 if [ -n "$TAG" ]; then
@@ -180,26 +201,43 @@ if [ -n "$TAG" ]; then
 fi
 
 # === 3. Install Skill discovery entries ===
+CLAUDE_TARGET_CREATED=0
+CODEX_TARGET_CREATED=0
 install_skill_target() {
   local platform_name="$1"
   local target_dir="$2"
+  local result_var="$3"
   if [ "$target_dir" = "$INSTALL_DIR" ] || (
     [ -e "$target_dir" ] && [ "$target_dir" -ef "$INSTALL_DIR" ]
   ); then
+    if [ "$target_dir" = "$INSTALL_DIR" ] && [ "$CHECKOUT_CREATED" -eq 1 ]; then
+      printf -v "$result_var" '%s' 1
+    fi
     echo "  ✅ $platform_name Skill → $target_dir"
     return
   fi
   mkdir -p "$(dirname "$target_dir")"
   ln -s "$INSTALL_DIR" "$target_dir"
+  printf -v "$result_var" '%s' 1
   echo "  ✅ $platform_name Skill 已链接 → $target_dir"
 }
 
 if platform_selected claude; then
-  install_skill_target "Claude" "$CLAUDE_SKILL_DIR"
+  install_skill_target "Claude" "$CLAUDE_SKILL_DIR" CLAUDE_TARGET_CREATED
 fi
 if platform_selected codex; then
-  install_skill_target "Codex" "$CODEX_SKILL_DIR"
+  install_skill_target "Codex" "$CODEX_SKILL_DIR" CODEX_TARGET_CREATED
 fi
+
+RECORD_ARGS=(--checkout "$INSTALL_DIR")
+[ "$CHECKOUT_CREATED" -eq 1 ] && RECORD_ARGS+=(--checkout-created)
+if platform_selected claude; then
+  RECORD_ARGS+=(--target claude "$CLAUDE_SKILL_DIR" "$CLAUDE_TARGET_CREATED")
+fi
+if platform_selected codex; then
+  RECORD_ARGS+=(--target codex "$CODEX_SKILL_DIR" "$CODEX_TARGET_CREATED")
+fi
+python3 "$INSTALL_DIR/scripts/record_skill_install.py" "${RECORD_ARGS[@]}"
 
 if [ "$SKIP_INSTALL" -eq 1 ]; then
   echo
@@ -231,9 +269,6 @@ echo "  🚀 正在执行安装（模式：${MODE}）……"
 echo
 
 case "$MODE" in
-  D)
-    python3 "$INSTALL_DIR/scripts/diagnose.py"
-    ;;
   C)
     if platform_selected claude; then
       python3 "$INSTALL_DIR/scripts/install_rule_intake.py"

@@ -45,8 +45,15 @@ class RecommendationContractTest(unittest.TestCase):
             "content": (
                 "# rules-architect-id: {}\n"
                 "# rules-architect-enforcement: {}\n"
-                "def main():\n    return 0\n"
-            ).format(rule_id, enforcement_digest(adapter)),
+                "# rules-architect-blocking: {}\n"
+                "import json\n"
+                "def main():\n"
+                "    print(json.dumps({{\"hookSpecificOutput\": "
+                "{{\"permissionDecision\": \"deny\"}}}}))\n"
+                "    return 0\n"
+            ).format(
+                rule_id, enforcement_digest(adapter), enforcement_digest(adapter)
+            ),
             "reason": "创建阻断 Hook", "requires_confirmation": False,
             "registrations": [{
                 "platform": "claude", "config_path": "/repo/.claude/settings.json",
@@ -142,6 +149,36 @@ class RecommendationContractTest(unittest.TestCase):
         del enforcement["matcher"]
         errors = validate_recommendations(data, self.inventory())
         self.assertTrue(any("需要 'matcher'" in error for error in errors))
+
+    def test_codex_user_prompt_submit_allows_matcherless_registration(self):
+        inventory = self.schema_12_inventory()
+        data = self.recommendations()
+        data.update({
+            "schema_version": "1.2", "plan_status": "ready",
+            "inventory_fingerprint": inventory["inventory_fingerprint"],
+            "resolved_occurrence_ids": [], "resolved_artifact_ids": [],
+            "clarifications": [], "artifact_decisions": [],
+            "operations": [self.automatic_hook_operation()],
+        })
+        adapter = data["recommendations"][0]["enforcement"][0]
+        adapter.update({
+            "mode": "remind", "platform": "codex",
+            "event": "UserPromptSubmit", "matcher": None,
+        })
+        adapter.pop("predicate", None)
+        operation = data["operations"][0]
+        operation["content"] = (
+            "# rules-architect-id: R-main-push\n"
+            "# rules-architect-enforcement: {}\n"
+        ).format(enforcement_digest(adapter))
+        operation["registrations"][0].update({
+            "platform": "codex", "event": "UserPromptSubmit", "matcher": None,
+        })
+        data["recommendations"][0].update({
+            "execution_mode": "automatic", "decision_source": "inferred",
+            "operation_ids": ["OP-create"],
+        })
+        self.assertEqual(validate_recommendations(data, inventory), [])
 
     def test_every_occurrence_must_be_covered(self):
         data = self.recommendations()

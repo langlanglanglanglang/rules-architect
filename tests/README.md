@@ -13,7 +13,10 @@ tests/
     ├── test_rule_inventory.py           # source discovery + extraction
     ├── test_recommendations.py           # contract + five-group renderer
     ├── test_apply_reconciliation.py      # guarded preview/apply behavior
-    └── test_codex_version_check.py       # desktop/CLI version detection boundary
+    ├── test_codex_version_check.py       # desktop/CLI version detection boundary
+    ├── test_install_rollback.py          # aborted install rollback
+    ├── test_uninstall.py                 # exact config + backup-first uninstall
+    └── test_recovery_archive.py          # durable archive/hash/mode guarantees
 ```
 
 ## Running
@@ -39,9 +42,9 @@ groups. Schema 1.2 coverage verifies complete preflight coverage, structured
 clarification outcomes, low-confidence rejection, and bidirectional consistency
 between final conclusions and executable operations.
 The apply tests verify preview-only defaults, allowed-path creation, executable
-They also cover legacy-plan rejection, full preview preflight, accurate partial
-state, corrupt-state blocking, no-op application, and explicit desired Hook
-registration sets.
+Hook output, legacy-plan rejection, full preview preflight, indivisible partial
+selection, corrupt-state blocking, no-op application, rollback on failure, and
+explicit desired Hook registration sets.
 The Codex version tests verify that a missing, failed, or older standalone CLI
 warns without blocking desktop-client installation, while strict mode fails.
 
@@ -74,6 +77,8 @@ verifies:
 - all three Claude and Codex Hook files are executable and registered;
 - pre-existing Codex Hook commands are preserved;
 - the shared manifest tracks both platforms.
+- diagnose-only mode leaves no persistent Skill/config directories;
+- full uninstall removes bootstrap-owned discovery entries and a clean checkout.
 
 ### Integration: read-only distribution pipeline
 
@@ -104,9 +109,10 @@ real `/rules-architect` run and is not reproducible as a standalone shell test.
 | 7 | `install_personal_md_section.py` inserts §六 with markers |
 | 8 | `diagnose.py` post-install reports L0 grade A or B |
 | 9 | `uninstall.py --dry-run` previews removals |
-| 10 | `uninstall.py` actually removes all hooks + clears settings.json + archives manifest |
+| 10 | `uninstall.py` moves Hook/Path Rule originals into recovery storage and snapshots configs |
 | 11 | No hook files remain after uninstall |
 | 12 | Manifest is gone (archived to `.json.removed.<ts>`) |
+| 13 | Recovery index contains every removed Hook/config plus pre-run Manifest |
 
 ## CI integration
 
