@@ -141,4 +141,22 @@ test -x "$CODEX_ONLY_HOME/.codex/hooks/memory_intake_check.py"
 test ! -e "$CODEX_ONLY_HOME/.claude/skills/rules-architect"
 test ! -e "$CODEX_ONLY_HOME/.claude/hooks/memory_intake_check.py"
 
+# A stale standalone CLI must not block Codex desktop Hook installation. The
+# app runtime and the executable found in PATH are not necessarily identical.
+cat > "$TMP_BIN/codex" <<'EOF'
+#!/usr/bin/env bash
+echo "codex-cli 0.100.0"
+EOF
+chmod +x "$TMP_BIN/codex"
+OLD_CLI_HOME="$TMP_ROOT/old-cli-home"
+mkdir -p "$OLD_CLI_HOME"
+HOME="$OLD_CLI_HOME" \
+PATH="$TMP_BIN:$PATH" \
+RULES_ARCHITECT_REPO="$TMP_SOURCE" \
+bash "$REPO_ROOT/bootstrap.sh" \
+  --platforms codex \
+  --mode B \
+  --non-interactive >/dev/null
+test -x "$OLD_CLI_HOME/.codex/hooks/memory_intake_check.py"
+
 echo "bootstrap platform matrix integration: passed"

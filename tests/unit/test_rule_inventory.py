@@ -231,6 +231,26 @@ class RuleInventoryTest(unittest.TestCase):
             "# generated-by: other-tool\n"
             "raise RuntimeError('扫描器绝不能执行此文件')\n"
         )
+        shell_hook = hooks / "third-party.sh"
+        shell_hook.write_text(
+            "#!/bin/sh\n# generated-by: shell-hook-tool\nexit 0\n"
+        )
+        settings = self.project / ".claude" / "settings.json"
+        settings.write_text(json.dumps({
+            "hooks": {"PreToolUse": [{
+                "matcher": "Bash", "hooks": [{
+                    "type": "command", "command": "python3 missing.py",
+                }, {
+                    "type": "command", "command": "bash {}".format(shell_hook),
+                }],
+            }]},
+        }))
+        proto = self.project / ".claude" / "rules" / "nested" / "proto.md"
+        proto.write_text(
+            "---\npaths:\n  - \"**/*.proto\"\n---\n"
+            "<!-- generated-by: path-rule-tool -->\n"
+            "- 字段编号必须递增。\n"
+        )
         (self.home / ".claude" / ".rules-architect-manifest.json").write_text(
             json.dumps({"installed_files": [
                 {"path": str(managed), "hash_sha256": hashlib.sha256(managed.read_bytes()).hexdigest()},
@@ -248,10 +268,13 @@ class RuleInventoryTest(unittest.TestCase):
         self.assertEqual(by_name["modified.py"]["status"], "modified_orphan")
         self.assertFalse(by_name["modified.py"]["safe_to_modify"])
         self.assertEqual(by_name["external.py"]["ownership"], "external_tool")
+        self.assertEqual(by_name["third-party.sh"]["ownership"], "external_tool")
+        self.assertEqual(by_name["third-party.sh"]["status"], "active")
         self.assertEqual(by_name["missing.py"]["status"], "dangling_registration")
         path_rules = {Path(item["path"]).name: item for item in data["path_rule_artifacts"]}
         self.assertIn("proto.md", path_rules)
-        self.assertEqual(path_rules["proto.md"]["ownership"], "unknown")
+        self.assertEqual(path_rules["proto.md"]["ownership"], "external_tool")
+        self.assertEqual(path_rules["proto.md"]["generator"], "path-rule-tool")
 
 
 if __name__ == "__main__":

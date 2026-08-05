@@ -117,6 +117,18 @@ def remove_exact_registration(config, registration):
     return changed
 
 
+def same_registration(left, right):
+    return all(left.get(key) == right.get(key) for key in (
+        "config_path", "event", "matcher", "command"
+    ))
+
+
+def same_manifest_registration(left, right):
+    return all(left.get(key) == right.get(key) for key in (
+        "event", "matcher", "command"
+    ))
+
+
 def add_exact_registration(config, registration):
     event = registration["event"]
     matcher = registration["matcher"]
@@ -170,7 +182,12 @@ def rebuild_inventory(inventory):
     return builder.build()
 
 
-def apply_plan(plan, inventory, confirm=False, verify_current=True):
+def apply_plan(
+    plan, inventory, confirm=False, verify_current=True,
+    selected_operation_ids=None, selected_actions=None,
+):
+    if plan.get("schema_version") != "1.2" or plan.get("plan_status") != "ready":
+        raise ValueError("实际应用只接受 schema 1.2 且 plan_status=ready 的最终方案")
     errors = validate_recommendations(plan, inventory)
     if errors:
         raise ValueError("；".join(errors))
@@ -186,9 +203,42 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
             + inventory.get("path_rule_artifacts", [])
         )
     }
-    operations = plan.get("operations", [])
-    if not confirm:
-        return {"mode": "preview", "operations": len(operations), "applied": 0}
+    all_operations = plan.get("operations", [])
+    known_operation_ids = {
+        operation["operation_id"] for operation in all_operations
+    }
+    selected_operation_ids = set(selected_operation_ids or [])
+    selected_actions = set(selected_actions or [])
+    if selected_operation_ids and selected_actions:
+        raise ValueError("不能同时按操作 ID 和动作类型筛选")
+    unknown_operation_ids = selected_operation_ids - known_operation_ids
+    if unknown_operation_ids:
+        raise ValueError(
+            "选择了未知操作 ID：{}".format(
+                ", ".join(sorted(unknown_operation_ids))
+            )
+        )
+    if selected_operation_ids:
+        operations = [
+            operation for operation in all_operations
+            if operation["operation_id"] in selected_operation_ids
+        ]
+    elif selected_actions:
+        operations = [
+            operation for operation in all_operations
+            if operation["action"] in selected_actions
+        ]
+    else:
+        operations = list(all_operations)
+    if (selected_operation_ids or selected_actions) and not operations:
+        raise ValueError("所选条件没有匹配任何可执行操作")
+    if not operations:
+        return {
+            "mode": "no_op" if confirm else "preview",
+            "operations": 0,
+            "selected_operation_ids": [],
+            "applied": 0,
+        }
 
     applied = []
     manifest_path = Path(os.environ.get("RULES_ARCHITECT_MANIFEST") or (Path.home() / ".claude" / ".rules-architect-manifest.json"))
@@ -209,6 +259,12 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
     allowed_state_root = resolved(state_root())
     if state_path.parent != allowed_state_root and allowed_state_root not in state_path.parents:
         raise ValueError("状态文件不在私有状态目录内：{}".format(state_path))
+    previous_state = read_json(state_path) if state_path.is_file() else {}
+    if not isinstance(previous_state, dict):
+        raise ValueError("状态文件根节点必须是对象：{}".format(state_path))
+    for key in ("applied_operation_ids", "rule_ids", "history"):
+        if key in previous_state and not isinstance(previous_state[key], list):
+            raise ValueError("状态字段必须是列表：{}".format(key))
     prepared_paths = {}
     seen_paths = set()
     for operation in operations:
@@ -219,7 +275,8 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
             path = validate_target(artifact["path"], Path(inventory["project_root"]))
             if operation.get("path") and resolved(operation["path"]) != resolved(path):
                 raise ValueError("操作路径与 artifact_id 不一致：{}".format(operation["operation_id"]))
-            if operation.get("expected_hash") and current_hash(path) != operation["expected_hash"]:
+            if operation["action"] in {"update", "delete"} \
+                    and current_hash(path) != operation["expected_hash"]:
                 raise ValueError("目标哈希已经变化：{}".format(path))
         else:
             path = validate_target(operation["path"], Path(inventory["project_root"]))
@@ -229,8 +286,7 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
         if operation["action"] == "create" and (path.exists() or path.is_symlink()):
             raise ValueError("创建目标已存在：{}".format(path))
         registrations = list((artifact or {}).get("registrations", []))
-        if operation.get("registration"):
-            registrations.append(operation["registration"])
+        registrations.extend(operation.get("registrations", []))
         for registration in registrations:
             config_path = validate_config_path(
                 registration["config_path"], Path(inventory["project_root"])
@@ -240,6 +296,16 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
                 validate_hook_config(config, config_path)
         prepared_paths[operation["operation_id"]] = path
 
+    if not confirm:
+        return {
+            "mode": "preview",
+            "operations": len(operations),
+            "selected_operation_ids": [
+                operation["operation_id"] for operation in operations
+            ],
+            "applied": 0,
+        }
+
     for operation in operations:
         action = operation["action"]
         artifact = artifacts.get(operation.get("artifact_id"))
@@ -248,9 +314,21 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
         if action == "create":
             if path.exists() or path.is_symlink():
                 raise ValueError("创建目标已存在：{}".format(path))
-            atomic_write_text(path, operation["content"], executable=path.suffix == ".py")
+            atomic_write_text(
+                path, operation["content"],
+                executable=path.suffix.lower() in {
+                    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+                    ".js", ".mjs", ".cjs", ".rb", ".pl"
+                },
+            )
         elif action == "update":
-            atomic_write_text(path, operation["content"], executable=path.suffix == ".py")
+            atomic_write_text(
+                path, operation["content"],
+                executable=path.suffix.lower() in {
+                    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+                    ".js", ".mjs", ".cjs", ".rb", ".pl"
+                },
+            )
         elif action in {"disable", "delete"}:
             for registration in artifact.get("registrations", []):
                 config_path = validate_config_path(
@@ -276,8 +354,33 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
             if action == "delete":
                 path.unlink()
 
-        registration = operation.get("registration")
-        if registration and action in {"create", "update"}:
+        desired_registrations = operation.get("registrations", [])
+        if action == "update" and artifact:
+            for previous in artifact.get("registrations", []):
+                if any(
+                    same_registration(previous, desired)
+                    for desired in desired_registrations
+                ):
+                    continue
+                config_path = validate_config_path(
+                    previous["config_path"], Path(inventory["project_root"])
+                )
+                mutate_config(
+                    config_path,
+                    lambda config, r=previous: remove_exact_registration(config, r),
+                )
+                registration_key = (
+                    "codex_hooks_added"
+                    if previous.get("platform") == "codex"
+                    else "settings_hooks_added"
+                )
+                manifest.setdefault(registration_key, [])[:] = [
+                    entry for entry in manifest.get(registration_key, [])
+                    if not same_manifest_registration(entry, previous)
+                ]
+        for registration in (
+            desired_registrations if action in {"create", "update"} else []
+        ):
             config_path = validate_config_path(
                 registration["config_path"], Path(inventory["project_root"])
             )
@@ -298,6 +401,8 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
                 for entry in tracked
             ):
                 tracked.append({
+                    "platform": registration["platform"],
+                    "config_path": registration["config_path"],
                     "event": registration["event"],
                     "matcher": registration["matcher"],
                     "command": registration["command"],
@@ -325,15 +430,55 @@ def apply_plan(plan, inventory, confirm=False, verify_current=True):
         applied.append(operation["operation_id"])
 
     atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    applied_rule_ids = {
+        operation.get("rule_id") for operation in operations
+        if operation.get("operation_id") in applied and operation.get("rule_id")
+    }
+    applied_details = [
+        {
+            "operation_id": operation["operation_id"],
+            "operation_digest": sha256_bytes(json.dumps(
+                operation, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")),
+            "action": operation["action"],
+            "rule_id": operation.get("rule_id"),
+            "artifact_id": operation.get("artifact_id"),
+            "path": str(prepared_paths[operation["operation_id"]]),
+        }
+        for operation in operations
+        if operation["operation_id"] in applied
+    ]
+    history = list(previous_state.get("history", []))[-19:]
+    history.append({
+        "inventory_fingerprint": inventory["inventory_fingerprint"],
+        "operations": applied_details,
+        "applied_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
     atomic_private_write(state_path, {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "project_root": inventory["project_root"],
         "based_on_inventory_fingerprint": inventory["inventory_fingerprint"],
-        "applied_operation_ids": applied,
-        "rule_ids": sorted({item["rule_id"] for item in plan.get("recommendations", [])}),
+        "applied_operation_ids": list(applied),
+        "rule_ids": sorted(applied_rule_ids),
+        "last_applied_operations": applied_details,
+        "history": history,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
-    return {"mode": "apply", "operations": len(operations), "applied": len(applied), "state_path": str(state_path)}
+    return {
+        "mode": "apply",
+        "operations": len(operations),
+        "selected_operation_ids": applied,
+        "applied": len(applied),
+        "state_path": str(state_path),
+    }
+
+
+def comma_separated(values):
+    out = []
+    for value in values or []:
+        out.extend(item.strip() for item in value.split(",") if item.strip())
+    return out
 
 
 def main():
@@ -341,11 +486,21 @@ def main():
     parser.add_argument("recommendations", help="建议 JSON")
     parser.add_argument("inventory", help="生成建议时使用的清单 JSON")
     parser.add_argument("--yes", action="store_true", help="确认执行写入；省略时只预览")
+    parser.add_argument(
+        "--operation", action="append", default=[], metavar="ID[,ID]",
+        help="只处理指定操作 ID；可重复使用或用逗号分隔",
+    )
+    parser.add_argument(
+        "--action", action="append", choices=["create", "update", "disable", "delete"],
+        help="只处理指定动作；可重复使用，例如 --action create",
+    )
     args = parser.parse_args()
     try:
         result = apply_plan(
             read_json(args.recommendations), read_json(args.inventory),
             confirm=args.yes, verify_current=True,
+            selected_operation_ids=comma_separated(args.operation),
+            selected_actions=args.action,
         )
     except (OSError, ValueError, KeyError) as exc:
         print("错误：{}".format(exc), file=sys.stderr)

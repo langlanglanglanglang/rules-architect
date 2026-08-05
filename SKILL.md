@@ -108,8 +108,15 @@ Manifest、文件标记、外部生成器标记依次判断为 `rules_architect`
 python3 "$ra_skill_dir/scripts/recommendation_contract.py" --example
 ```
 
-无法可靠判断的候选进入
-`unclassified`，不得强塞进五组。
+无法可靠判断的候选不得直接进入最终推荐。先生成 schema 1.2 的
+`plan_status: needs_confirmation` 和 `clarifications`，把冲突、作用域、外部产物
+复用方式等问题集中展示给用户；此阶段 `recommendations`、`artifact_decisions`、
+`operations` 必须为空。每个候选必须且只能出现在某个 clarification，或列入
+`resolved_occurrence_ids` 表示无需询问；每个现有产物也必须进入 clarification 或
+`resolved_artifact_ids`，不得遗漏。每个选项用 `outcomes` 逐目标声明最终 action、
+canonical path、report group、artifact IDs、paths 和完整 enforcement 结构。
+用户确认后记录 `selected_option_id` 和
+`decision_source: user_confirmed`，再重新生成 `plan_status: ready` 的最终方案。
 
 分类顺序：
 
@@ -119,11 +126,18 @@ python3 "$ra_skill_dir/scripts/recommendation_contract.py" --example
 4. 判断动作是否可观察、违规是否可确定验证，再选择 `enforcement`
 5. 最后选择 `report_group`
 
-同时对 inventory 中每个 `hook_artifacts[].artifact_id` 和
+最终方案同时对 inventory 中每个 `hook_artifacts[].artifact_id` 和
 `path_rule_artifacts[].artifact_id` 生成唯一
-`artifact_decisions`，动作从 `keep/reuse/update/disable/delete/review` 中选择。
-外部工具或未知所有权产物只能保留、复用或复核；Manifest 托管但哈希不一致的
-产物只能复核。语义相同的现有 Hook 应优先 `reuse`，不得重复创建。
+`artifact_decisions`，动作从 `keep/reuse/update/disable/delete` 中选择。
+最终 `recommendations` 禁止出现 `review`，`unclassified` 必须为空，且不得保留
+低置信度结论。外部工具或未知所有权产物只能保留或复用；Manifest 托管但哈希
+不一致的产物只能保留或复用。语义相同的现有 Hook 应优先 `reuse`，不得重复创建。
+每条最终推荐和产物决策都必须通过 `operation_ids` 与待执行操作双向关联：变更动作
+不得缺少操作，`keep/reuse` 不得暗藏写操作，任何 operation 也不得游离于最终结论。
+推荐还必须标记 `execution_mode`：Hook/Path Rule 的安全写操作可为 `automatic`；
+当前应用器不支持的 AGENTS/CLAUDE/memory/lessons 变更使用 `manual` 且不得生成
+operation；`keep/reuse` 使用 `none`。`move` 暂时只允许 `manual`，不得自动拆成
+create + delete 后声称具有事务原子性。
 
 Hook enforcement 首版只允许两种模式：
 
@@ -149,6 +163,12 @@ python3 "$ra_skill_dir/scripts/recommendation_contract.py" \
 - Hook 组没有 enforcement
 - Path Rules 组没有 path delivery
 - Hook 产物未全部决策，或试图修改外部/未知/本地改动过的产物
+- 前置确认未清零却生成最终推荐或写操作
+- 最终推荐仍包含 `review`、`unclassified` 或低置信度结论
+- 用户确认的结构化 outcome 与最终 path/group/enforcement/action 不一致
+- 最终结论与 operation 未双向绑定、动作冲突或自动操作落在不支持的分组
+- Hook 写操作未提供完整 desired registrations、注册与 enforcement 不一致，或
+  生成内容缺少 rule/enforcement 绑定标记
 
 ### 步骤 R4：渲染五组报告
 
@@ -158,12 +178,33 @@ python3 "$ra_skill_dir/scripts/render_distribution.py" \
   --inventory "$ra_workdir/inventory.json"
 ```
 
-固定输出：Hook 强制规则 / 路径规则 / 团队基线 / 个人记忆 / 团队经验，
-然后输出重复、冲突、待确认、Hook 实际状态、产物决策、待应用操作和扫描问题。
+前置阶段固定输出扫描内容和待确认问题；确认完成后的最终报告输出：Hook 强制规则 /
+路径规则 / 团队基线 / 个人记忆 / 团队经验，然后输出已处理的重复与冲突、Hook
+实际状态、产物决策、待应用操作和扫描问题。
 报告中的五组是展示分组，不是简单的
 覆盖优先级。
 
-报告交付后删除临时目录。除非用户随后明确要求安装或应用建议，否则到此停止。
+若 `plan_status` 是 `needs_confirmation`，只展示扫描内容与前置确认选项，并等待
+用户回答；不得展示最终推荐或执行菜单。若为 `ready` 且存在可安全应用的操作，
+展示最终推荐后必须给出：
+
+```text
+1. 执行全部可安全应用项
+2. 选择部分推荐执行（按操作 ID）
+3. 仅执行新增项
+4. 返回调整推荐方案
+5. 导出方案，暂不执行
+6. 重新扫描
+0. 退出，不做修改
+```
+
+没有 operation 时不得显示前三个执行选项，只提示当前没有可自动应用项，并保留
+调整、导出、重扫和退出。
+其中 4/5/6 由主代理完成：调整后重新生成并校验 plan；导出保存当前 1.2 JSON；
+重扫生成新 fingerprint 并废弃旧 plan，不是 `render_distribution.py` 的写操作。
+
+用户选择导出或退出后删除临时目录；需要继续选择、调整或执行时保留本次私有
+临时目录，完成整个交互后再删除。
 
 用户明确要求应用后，先预览操作；确认后才执行：
 
@@ -174,9 +215,30 @@ python3 "$ra_skill_dir/scripts/apply_reconciliation.py" \
   "$ra_workdir/recommendations.json" "$ra_workdir/inventory.json" --yes
 ```
 
+部分执行和仅新增使用：
+
+```bash
+python3 "$ra_skill_dir/scripts/apply_reconciliation.py" \
+  "$ra_workdir/recommendations.json" "$ra_workdir/inventory.json" \
+  --operation OP-001,OP-003 --yes
+python3 "$ra_skill_dir/scripts/apply_reconciliation.py" \
+  "$ra_workdir/recommendations.json" "$ra_workdir/inventory.json" \
+  --action create --yes
+```
+
+任何实际执行前先省略 `--yes` 预览所选操作。修改、禁用、删除需再次向用户列出
+目标并确认；应用完成后重新扫描一次，展示规则已收敛后的结果。
+部分执行只选择报告中明确列出的独立 operation。`move` 不会出现在自动操作中，
+必须由用户另行确认并人工完成。
+
 应用器会重扫指纹、复核所有权与目标哈希，只写允许目录，不跟随符号链接，并在
-成功后保存仅含 ID、哈希和动作的私有状态。增改禁删必须由 `operations` 明确描述；
+成功后只把本次实际成功的 operation/rule ID 写入当前事务，并把 fingerprint/digest
+追加到有界历史；空操作不写 Manifest 或状态。增改禁删必须由 `operations` 明确描述；
 不得绕过应用器直接执行报告中的推测动作。
+预览与实际执行使用同一套路径、配置、Manifest、state 和目标哈希预检。旧 schema
+1.0/1.1 仅可查看；实际应用必须重新生成 `schema_version: 1.2`、`plan_status: ready`
+的方案。Hook create/update 的 `registrations` 表示完整期望集合，应用器按集合差异
+保留、删除或新增注册，不会根据单个注册推断并删除其他有效入口。
 
 ## 安装与迁移流程（由当前平台的主代理编排）
 
@@ -320,6 +382,7 @@ python3 "$ra_skill_dir/scripts/diagnose.py" --json > "$ra_install_dir/after.json
 - ❌ CLAUDE.md 的写作质量、命令时效性与事实正确性审计 — 仍委托给 `claude-md-management:claude-md-improver`
 - ❌ 默认自动应用分布建议 — 第一阶段只生成报告；现有安装/迁移流程仍需明确确认
 - ⚠️ codex 一等公民（`bootstrap.sh` 同时安装 Skill + Hook；`install_codex_hooks.py` 只补装 Hook）；gemini 等无 hook 契约的工具见 README 「跨工具」节
+- Codex 桌面客户端未必向 Shell 暴露独立 `codex` CLI；版本检测默认只警告并继续安装，只有用户或 CI 明确使用 `--strict-version-check` 才阻断。不得把“CLI 不在 PATH”表述为“当前客户端不支持 Hook”。
 
 ## 内容保留承诺
 

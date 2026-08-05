@@ -38,6 +38,7 @@ Usage:
   install_codex_hooks.py --rule-intake-keywords english
   install_codex_hooks.py --force                # overwrite existing
   install_codex_hooks.py --skip-version-check
+  install_codex_hooks.py --strict-version-check # CI: fail on missing/old CLI
 """
 import argparse
 import hashlib
@@ -101,7 +102,27 @@ def parse_version(s: str) -> tuple:
     return tuple(int(x) for x in m.groups())
 
 
-def check_codex_version(skip: bool) -> bool:
+def version_check_failure(message: str, strict: bool) -> bool:
+    """Report an unverifiable runtime without confusing CLI and app versions.
+
+    The Codex desktop client can run this Skill even when a separate ``codex``
+    executable is absent from its shell PATH. Installing Hook files/config does
+    not invoke that executable, so the default is a warning. CI can opt into
+    the legacy blocking behavior with ``--strict-version-check``.
+    """
+    if strict:
+        err(message)
+        err("严格版本检查已启用，Codex Hook 未安装。")
+        return False
+    warn(message)
+    warn(
+        "无法据此判断当前 Codex 客户端是否支持 Hook；将继续安装。"
+        "如需阻断，请使用 --strict-version-check。"
+    )
+    return True
+
+
+def check_codex_version(skip: bool, strict: bool = False) -> bool:
     if skip:
         warn("已跳过 Codex 版本检查（--skip-version-check）")
         return True
@@ -111,25 +132,30 @@ def check_codex_version(skip: bool) -> bool:
             capture_output=True, text=True, timeout=5
         )
         if out.returncode != 0:
-            err(f"`codex --version` 执行失败：{out.stderr}")
-            return False
+            detail = (out.stderr or out.stdout or "无错误输出").strip()
+            return version_check_failure(
+                f"独立 Codex CLI 版本检查失败：{detail}", strict
+            )
         version_str = out.stdout.strip()
         current = parse_version(version_str)
         required = parse_version(MIN_CODEX_VERSION)
         if current < required:
-            err(
-                f"Codex 版本 {version_str} 低于最低要求 {MIN_CODEX_VERSION}"
-                "（Hook 引擎从 v0.124.0 起稳定）"
+            return version_check_failure(
+                f"PATH 中的独立 Codex CLI 版本 {version_str or '无法解析'} "
+                f"低于建议版本 {MIN_CODEX_VERSION}；"
+                "它可能与当前 Codex 客户端不是同一运行时。",
+                strict,
             )
-            return False
-        ok(f"Codex 版本 {version_str}，满足最低要求 {MIN_CODEX_VERSION}")
+        ok(f"独立 Codex CLI 版本 {version_str}，满足建议版本 {MIN_CODEX_VERSION}")
         return True
     except FileNotFoundError:
-        err("PATH 中找不到 `codex`，请先安装 Codex CLI。")
-        return False
+        return version_check_failure(
+            "PATH 中找不到独立 `codex` CLI。"
+            "Codex 桌面客户端不一定会把内置运行时暴露到 PATH。",
+            strict,
+        )
     except Exception as e:
-        err(f"Codex 版本检查失败：{e}")
-        return False
+        return version_check_failure(f"Codex 版本检查失败：{e}", strict)
 
 
 # === Template substitution ===
@@ -569,8 +595,11 @@ def main() -> int:
     ap.add_argument("--rule-intake-keywords",
                     choices=["chinese", "english"], default="chinese",
                     help="rule_intake_reminder.py 的关键词预设")
-    ap.add_argument("--skip-version-check", action="store_true",
-                    help="跳过 Codex 版本检查（不推荐）")
+    version_group = ap.add_mutually_exclusive_group()
+    version_group.add_argument("--skip-version-check", action="store_true",
+                               help="完全跳过独立 Codex CLI 版本检测")
+    version_group.add_argument("--strict-version-check", action="store_true",
+                               help="CLI 缺失、失败或版本过低时阻断安装（适合 CI）")
     args = ap.parse_args()
 
     print(f"\n📦 rules-architect Codex 安装器 v{SKILL_VERSION}")
@@ -584,7 +613,9 @@ def main() -> int:
     print(f"   Manifest：{MANIFEST_PATH}")
     print()
 
-    if not check_codex_version(args.skip_version_check):
+    if not check_codex_version(
+        args.skip_version_check, strict=args.strict_version_check
+    ):
         return 2
 
     # Pre-flight: refuse to write ANY hook file if the target hooks.json is

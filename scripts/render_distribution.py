@@ -43,6 +43,11 @@ ACTION_LABEL = {
     "delete": "删除",
     "review": "复核",
 }
+EXECUTION_LABEL = {
+    "automatic": "可自动应用",
+    "manual": "需人工执行",
+    "none": "无需写入",
+}
 DELIVERY_LABEL = {
     "always_loaded": "始终加载",
     "path_scoped": "按路径加载",
@@ -124,7 +129,16 @@ def render(data, inventory=None, verbose=False):
                 + inventory.get("path_rule_artifacts", [])
             )
         }
-    lines = ["规则分布建议（只读，尚未修改文件）", ""]
+    needs_confirmation = (
+        data.get("schema_version") == "1.2"
+        and data.get("plan_status") == "needs_confirmation"
+    )
+    title = (
+        "扫描结果与前置确认（尚未生成推荐方案）"
+        if needs_confirmation else
+        "最终规则推荐方案（只读，尚未修改文件）"
+    )
+    lines = [title, ""]
     if inventory:
         summary = inventory.get("summary", {})
         lines.append(
@@ -136,6 +150,116 @@ def render(data, inventory=None, verbose=False):
             )
         )
         lines.append("")
+
+    candidates = (inventory or {}).get("rule_candidates", [])
+    lines.append("扫描出的规则内容（{}）".format(len(candidates)))
+    lines.append("")
+    if not candidates:
+        lines.append("（无）")
+    else:
+        for candidate in candidates:
+            lines.append(
+                "- [{}] {} — {}:{}".format(
+                    candidate["occurrence_id"],
+                    candidate["text"],
+                    candidate["source_path"],
+                    candidate["line_start"],
+                )
+            )
+    lines.append("")
+    if inventory:
+        source_by_path = {
+            source.get("path"): source for source in inventory.get("sources", [])
+            if isinstance(source, dict) and source.get("path")
+        }
+        scanned_artifacts = (
+            inventory.get("hook_artifacts", [])
+            + inventory.get("path_rule_artifacts", [])
+        )
+        lines.append("扫描出的 Hook / Path Rule 产物（{}）".format(len(scanned_artifacts)))
+        lines.append("")
+        if not scanned_artifacts:
+            lines.append("（无）")
+        else:
+            for artifact in scanned_artifacts:
+                lines.append(
+                    "- [{}][{}][{}] {}".format(
+                        artifact.get("artifact_id", "未知"),
+                        STATUS_LABEL.get(artifact.get("status"), artifact.get("status", "未知")),
+                        OWNERSHIP_LABEL.get(
+                            artifact.get("ownership"), artifact.get("ownership", "未知")
+                        ),
+                        artifact.get("path") or artifact.get("command") or "（无路径）",
+                    )
+                )
+                if artifact.get("generator"):
+                    lines.append("  生成器：{}".format(artifact["generator"]))
+                analysis = artifact.get("analysis") or {}
+                if analysis.get("reminder"):
+                    lines.append("  规则：{}".format(analysis["reminder"]))
+                elif artifact.get("kind") == "hook":
+                    lines.append(
+                        "  规则：无法静态提取（{} / {}）".format(
+                            analysis.get("mode", "opaque"),
+                            CONFIDENCE_LABEL.get(
+                                analysis.get("confidence"),
+                                analysis.get("confidence", "未知"),
+                            ),
+                        )
+                    )
+                for registration in artifact.get("registrations", []):
+                    lines.append(
+                        "  注册：{} / {} / {}".format(
+                            registration.get("platform", "未知"),
+                            registration.get("event", "未知"),
+                            registration.get("matcher") or "*",
+                        )
+                    )
+                source = source_by_path.get(artifact.get("path"))
+                if artifact.get("kind") == "path_rule" and source:
+                    lines.append("  paths：{}".format(", ".join(source.get("paths", [])) or "（无）"))
+        lines.append("")
+
+    if needs_confirmation:
+        clarifications = data.get("clarifications", [])
+        unresolved = sum(
+            1 for item in clarifications
+            if item.get("selected_option_id") is None
+        )
+        lines.append(
+            "生成推荐方案前，需要确认（{} 项未确认）".format(unresolved)
+        )
+        lines.append("")
+        for item in clarifications:
+            selected = item.get("selected_option_id")
+            state = "已确认" if selected else "待确认"
+            lines.append(
+                "{} [{}] {}".format(
+                    item["clarification_id"], state, item["summary"]
+                )
+            )
+            lines.append("问题：" + item["question"])
+            for index, option in enumerate(item.get("options", []), 1):
+                marker = " ✓" if option.get("option_id") == selected else ""
+                actions = sorted({
+                    outcome.get("action", "")
+                    for outcome in option.get("outcomes", [])
+                    if isinstance(outcome, dict) and outcome.get("action")
+                })
+                action_text = "/".join(
+                    ACTION_LABEL.get(action, action) for action in actions
+                ) or "待定"
+                lines.append(
+                    "  {}. {} [{}]{}".format(
+                        index,
+                        option["label"],
+                        action_text,
+                        marker,
+                    )
+                )
+            lines.append("")
+        lines.append("请先完成以上确认；确认清零前不会生成或执行推荐操作。")
+        return "\n".join(lines).rstrip() + "\n"
 
     action_counts = {}
     for item in data.get("recommendations", []):
@@ -238,15 +362,22 @@ def render(data, inventory=None, verbose=False):
                 if sources:
                     lines.append("来源：" + "；".join(sources))
             lines.append("原因：" + item["reason"])
+            if data.get("schema_version") == "1.2":
+                mode = item.get("execution_mode", "none")
+                lines.append("执行方式：" + EXECUTION_LABEL.get(mode, mode))
             if verbose:
                 lines.append("出现位置 ID：" + ", ".join(item["occurrence_ids"]))
             lines.append("")
 
-    for key, title in [
+    relationship_titles = [
+        ("duplicates", "已处理重复关系"),
+        ("conflicts", "已处理冲突关系"),
+    ] if data.get("schema_version") == "1.2" else [
         ("duplicates", "重复关系"),
         ("conflicts", "冲突关系"),
         ("unclassified", "待确认"),
-    ]:
+    ]
+    for key, title in relationship_titles:
         items = data.get(key, [])
         lines.append("{}（{}）".format(title, len(items)))
         lines.append("")
@@ -311,7 +442,13 @@ def render(data, inventory=None, verbose=False):
                     )
                 )
                 if artifact.get("modified_since_managed"):
-                    lines.append("  本地内容与 Manifest 哈希不一致，只能人工复核。")
+                    if data.get("schema_version") == "1.2":
+                        lines.append(
+                            "  本地内容与 Manifest 哈希不一致；"
+                            "已按前置确认结论处理，不会自动改写。"
+                        )
+                    else:
+                        lines.append("  本地内容与 Manifest 哈希不一致，只能人工复核。")
                 decision = decisions.get(artifact.get("artifact_id"))
                 if decision:
                     lines.append(
@@ -366,8 +503,9 @@ def render(data, inventory=None, verbose=False):
         else:
             for index, operation in enumerate(operations, 1):
                 lines.append(
-                    "{}. [{}] {}".format(
+                    "{}. [{}][{}] {}".format(
                         index,
+                        operation["operation_id"],
                         ACTION_LABEL.get(operation["action"], operation["action"]),
                         operation["reason"],
                     )
@@ -400,6 +538,23 @@ def render(data, inventory=None, verbose=False):
                     "- 跳过 {}：{}".format(item["path"], item["reason"])
                 )
         lines.append("")
+        if data.get("schema_version") == "1.2":
+            lines.extend(["请选择下一步", ""])
+            if operations:
+                lines.extend([
+                    "1. 执行全部可安全应用项",
+                    "2. 选择部分推荐执行（按操作 ID）",
+                    "3. 仅执行新增项",
+                ])
+            else:
+                lines.append("当前没有可安全应用的自动操作。")
+            lines.extend([
+                "4. 返回调整推荐方案",
+                "5. 导出方案，暂不执行",
+                "6. 重新扫描",
+                "0. 退出，不做修改",
+                "",
+            ])
     return "\n".join(lines).rstrip() + "\n"
 
 

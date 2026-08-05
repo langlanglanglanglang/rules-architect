@@ -132,9 +132,13 @@ $rules-architect
 1. 用 `scripts/rule_inventory.py` 建立当前项目候选清单
 2. 同时扫描已注册、孤立、失效和本地修改过的 Hook，并识别所有权
 3. 对每条候选选择唯一正文、加载适配器和 enforcement 模式
-4. 结合上次私有状态，给出新增、复用、修改、禁用、删除、保留或复核建议
+4. 先完成冲突与低置信度项的前置确认，再给出新增、复用、修改、禁用、删除或保留结论
 5. 用 `recommendation_contract.py` 校验没有漏项、越权修改或旧报告
 6. 用 `render_distribution.py` 输出五组建议和 Hook 实际状态
+
+遇到冲突、低置信度或外部产物语义不明确时，会先集中询问用户。确认完成前不会
+生成最终推荐或写操作；最终推荐中不会再出现“复核”，只保留已经确定的创建、
+复用、迁移、修改、禁用、删除和保留动作。
 
 对用户来说入口仍然只有一次 Skill 调用。语义分类由当前会话的主代理
 完成；Python 工具只负责确定性扫描、校验和渲染，不声称能够脱离模型独立
@@ -148,6 +152,17 @@ Hook 会明确标注“阻断”（`block`）或“提醒”（`remind`）。
 所有权和上次状态收敛为增删改建议。其他工具或用户创建的 Hook 会被纳入比较，
 但不会自动改写；只有 rules-architect 托管且哈希未变化的产物才可进入安全应用。
 报告默认只读，用户明确确认后才可用 `scripts/apply_reconciliation.py --yes` 执行。
+最终报告提供全部执行、按操作 ID 部分执行、仅执行新增、调整方案、导出、重扫和
+退出选项；没有可执行 operation 时不显示执行类选项。修改、禁用和删除在真正执行
+前还会二次确认。部分执行只记录实际成功项，避免重复运行时把未执行建议误判为
+已处理。`move` 和应用器不支持的文档/记忆写入只给人工操作，不伪装成原子自动操作。
+
+schema 1.2 会逐一覆盖扫描候选，并把用户确认结果结构化绑定到最终 target、分组、
+Hook 模式和动作；最终结论与 operation 必须双向引用且动作一致，不能出现报告说
+“保留”但执行器实际“删除”的情况。
+预览与应用执行相同的路径、配置、状态和哈希预检；旧 schema 只能查看，写入必须是
+1.2 ready。自动 Hook 操作还会校验完整注册集合、enforcement 对应关系和生成内容
+标记，避免创建不会触发的孤立空文件。
 
 输出形态示例：
 
@@ -254,8 +269,13 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 下面的命令只补装 Codex Hook，不安装 Skill：
 
 ```bash
-python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
+python3 ~/.agents/skills/rules-architect/scripts/install_codex_hooks.py
 ```
+
+版本检测只用于提示：Codex 桌面客户端可以运行 Skill，但不一定把独立 `codex`
+CLI 暴露到当前 Shell 的 `PATH`。因此 CLI 缺失、执行失败或版本偏旧时，安装器会
+警告后继续写入 Hook；这不代表客户端一定缺少 Hook 能力。CI 如需严格阻断，可加
+`--strict-version-check`；`--skip-version-check` 会完全跳过检测。
 
 把同样 3 个自包含 hook 写进 `~/.codex/hooks/`,deep-merge 进 `~/.codex/hooks.json`(保留已有条目)。差异全部由安装器处理:
 - 文件编辑 matcher 是 `apply_patch`(不是 `Write|Edit`);`memory_intake_check.py` 双运行时,自动解析 patch 文本里的路径

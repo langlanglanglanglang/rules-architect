@@ -12,7 +12,8 @@ tests/
 └── unit/
     ├── test_rule_inventory.py           # source discovery + extraction
     ├── test_recommendations.py           # contract + five-group renderer
-    └── test_apply_reconciliation.py      # guarded preview/apply behavior
+    ├── test_apply_reconciliation.py      # guarded preview/apply behavior
+    └── test_codex_version_check.py       # desktop/CLI version detection boundary
 ```
 
 ## Running
@@ -28,15 +29,21 @@ exact-project memory mapping, Claude import safety, Codex override/fallback
 precedence, repository-root discovery from a subdirectory, recursive path
 rules, project hook registration coverage, redaction, code-fence exclusion,
 promoted-stub exclusion, and deterministic output.
-It also verifies registered/orphan/dangling/modified hook health and ownership
-without executing hook code.
+It also verifies registered/orphan/dangling/modified hook health, non-Python
+Hook discovery, and third-party generator ownership without executing hook code.
 
 The recommendation tests verify full occurrence coverage, project/fingerprint
 binding, blocking-hook predicates, path-scoped targets, malformed
 duplicate/conflict rejection, unclassified rendering, and all five report
-groups.
+groups. Schema 1.2 coverage verifies complete preflight coverage, structured
+clarification outcomes, low-confidence rejection, and bidirectional consistency
+between final conclusions and executable operations.
 The apply tests verify preview-only defaults, allowed-path creation, executable
-mode, private state recording, and refusal to overwrite existing files.
+They also cover legacy-plan rejection, full preview preflight, accurate partial
+state, corrupt-state blocking, no-op application, and explicit desired Hook
+registration sets.
+The Codex version tests verify that a missing, failed, or older standalone CLI
+warns without blocking desktop-client installation, while strict mode fails.
 
 ### Integration: sandbox install/uninstall round-trip
 

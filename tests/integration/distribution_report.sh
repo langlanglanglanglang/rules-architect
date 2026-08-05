@@ -128,7 +128,10 @@ for index, candidate in enumerate(inventory["rule_candidates"], 1):
         "report_group": group,
         "reason": "integration fixture placement",
         "confidence": candidate["extraction_confidence"],
-        "action": action
+        "action": action,
+        "execution_mode": "none",
+        "decision_source": "existing_state",
+        "operation_ids": []
     })
 
 test_rules = [
@@ -138,7 +141,8 @@ test_rules = [
 assert len(test_rules) == 2, test_rules
 relation_occurrences = [candidate["occurrence_id"] for candidate in test_rules]
 report = {
-    "schema_version": "1.0",
+    "schema_version": "1.2",
+    "plan_status": "ready",
     "inventory_fingerprint": inventory["inventory_fingerprint"],
     "project_root": inventory["project_root"],
     "recommendations": recommendations,
@@ -152,9 +156,24 @@ report = {
         "relation_id": "C-review",
         "occurrence_ids": relation_occurrences,
         "summary": "fixture conflict rendering check",
-        "confidence": "low"
+        "confidence": "medium"
     }],
-    "unclassified": []
+    "unclassified": [],
+    "clarifications": [],
+    "resolved_occurrence_ids": [],
+    "resolved_artifact_ids": [],
+    "operations": [],
+    "artifact_decisions": [{
+        "artifact_id": artifact["artifact_id"],
+        "action": "keep",
+        "reason": "integration fixture keeps existing artifacts",
+        "confidence": "high",
+        "decision_source": "existing_state",
+        "operation_ids": []
+    } for artifact in (
+        inventory.get("hook_artifacts", [])
+        + inventory.get("path_rule_artifacts", [])
+    )]
 }
 with open(sys.argv[2], "w") as handle:
     json.dump(report, handle, ensure_ascii=False, indent=2)
@@ -170,8 +189,13 @@ grep -Eq '路径规则（[1-9]' "$REPORT"
 grep -Eq '团队基线（[1-9]' "$REPORT"
 grep -Eq '个人记忆（[1-9]' "$REPORT"
 grep -Eq '团队经验（[1-9]' "$REPORT"
-grep -q '重复关系（1）' "$REPORT"
-grep -q '冲突关系（1）' "$REPORT"
+grep -q '已处理重复关系（1）' "$REPORT"
+grep -q '已处理冲突关系（1）' "$REPORT"
+grep -q '当前没有可安全应用的自动操作' "$REPORT"
+if grep -q '\[复核\]' "$REPORT"; then
+    echo "ready report unexpectedly contains review action" >&2
+    exit 1
+fi
 grep -q "$TMP_PROJECT/AGENTS.md" "$REPORT"
 
 MALFORMED="$TMP_HOME/malformed.json"

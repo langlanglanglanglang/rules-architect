@@ -4,6 +4,45 @@ All notable changes to rules-architect skill will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- A schema 1.2 two-stage recommendation flow: unresolved semantic choices are
+  collected in `clarifications` before any final recommendation or operation
+  can be produced.
+- Final reports now include execution choices for all safe operations, selected
+  operation IDs, create-only execution, plan adjustment, export, and rescan.
+- `apply_reconciliation.py` supports partial selection with `--operation` and
+  `--action`.
+- Clarification outcomes now bind every affected occurrence/artifact to its
+  final placement and action; final conclusions and operations are cross-linked.
+- Mutating recommendations distinguish automatic, manual, and no-op execution;
+  moves remain manual until transactional support exists.
+
+### Changed
+
+- Final plans reject `review`, non-empty `unclassified`, unresolved
+  clarifications, and low-confidence recommendations. Review is now strictly a
+  pre-plan user-confirmation activity.
+- Partial apply state records only the successful transaction and appends a
+  bounded fingerprint/digest history; empty plans write no manifest or state.
+- Hook updates replace changed registrations, and inventory recognizes common
+  non-Python Hook scripts plus third-party Path Rule generator markers.
+- Preview and apply now share complete path/config/state/hash preflight, and
+  apply rejects legacy or non-ready plans.
+- Hook writes use an explicit desired registration set and must bind generated
+  content to the final enforcement specification.
+
+### Fixed
+
+- Codex Hook installation no longer fails merely because the desktop client's
+  shell cannot find a separate `codex` executable or finds an older CLI.
+  Version detection is advisory by default; `--strict-version-check` preserves
+  blocking behavior for CI.
+- The Codex-only manual install example now uses the actual Skill discovery
+  path at `~/.agents/skills/rules-architect`.
+
 ## [2.4.0] — 2026-08-03
 
 ### Added

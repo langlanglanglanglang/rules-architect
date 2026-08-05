@@ -93,7 +93,25 @@ Print a valid skeleton when needed:
 python3 "$ra_skill_dir/scripts/recommendation_contract.py" --example
 ```
 
-Put uncertain candidates in `unclassified`.
+Do not put uncertainty into the final recommendations. First emit schema 1.2
+with `plan_status: needs_confirmation` and collect ambiguous scope, conflicts,
+and external-artifact choices in `clarifications`. At this stage,
+`recommendations`, `artifact_decisions`, and `operations` must be empty. Record
+every occurrence exactly once in either a clarification or
+`resolved_occurrence_ids`, and every existing artifact in a clarification or
+`resolved_artifact_ids`. Each option must use structured `outcomes` to bind
+every affected occurrence/artifact to its action, canonical path, report group,
+artifact IDs, paths, and complete enforcement adapters. Record the user's choice as
+`decision_source: user_confirmed`, then regenerate a
+`plan_status: ready` final plan. Final recommendations forbid `review`, a
+non-empty `unclassified`, unresolved choices, and low confidence.
+
+Every final recommendation and artifact decision cross-references its
+`operation_ids`. Mutating automatic conclusions require matching operations;
+`keep` and `reuse` cannot hide writes; every operation must be referenced.
+`execution_mode` is `automatic` only for supported Hook/Path Rule writes,
+`manual` for unsupported document/memory changes, and `none` for keep/reuse.
+`move` is manual-only until a real transactional implementation exists.
 
 Choose, in order: content type; canonical body by audience/scope; optional
 path delivery; machine enforceability; then the report group. Keep the
@@ -112,7 +130,8 @@ python3 "$ra_skill_dir/scripts/recommendation_contract.py" \
 ```
 
 Fix validation errors; never ignore stale fingerprints, uncovered occurrences,
-duplicate coverage, or an incomplete blocking-hook specification.
+duplicate coverage, an incomplete blocking-hook specification, or a final plan
+produced before all clarifications are resolved.
 
 ### Step R4: Render the five-group report
 
@@ -122,12 +141,21 @@ python3 "$ra_skill_dir/scripts/render_distribution.py" \
   --inventory "$ra_workdir/inventory.json"
 ```
 
-The fixed groups are Hooks, Path-scoped Rules, Team Baseline, Memory, and
-Lessons, followed by duplicates, conflicts, unclassified items, and scan
-problems. These are display groups, not a simple override precedence chain.
-
-Remove the temporary directory after delivery. Stop after the report unless
-the user explicitly asks to install or apply recommendations.
+When confirmation is needed, render only scanned content and clarification
+options, then wait for the user's answers. Once ready, render Hooks,
+Path-scoped Rules, Team Baseline, Memory, and Lessons, followed by resolved
+relationships, artifact decisions, executable operations, scan problems, and
+this menu: all safe operations; selected operation IDs; create-only; adjust;
+export; rescan; exit. Preview every selection before applying. Updates,
+disables, and deletes require a second confirmation. Partial application uses
+`apply_reconciliation.py --operation OP-001,OP-003` or `--action create`.
+The execution choices are omitted when there are no operations. Partial
+selection applies only explicit independent operation IDs; moves are never
+automatic. Empty application writes no manifest or state, and state records
+only operations that actually succeeded. Preview and apply share the same
+path/config/state/hash preflight. Legacy schemas remain viewable, but applying
+requires a schema 1.2 ready plan. Options 4/5/6 are main-agent workflows:
+regenerate, export the current JSON, or rescan and invalidate the stale plan.
 
 ## Installation and Migration Flow (orchestrated by the current platform's main agent)
 
@@ -267,6 +295,7 @@ Remove `$ra_install_dir` after presenting the comparison.
 - ❌ CLAUDE.md writing-quality, stale-command, or factual-correctness audit — still delegated to `claude-md-management:claude-md-improver`
 - ❌ Automatic application of distribution advice by default — milestone one is report-only
 - ⚠️ codex is first-class (`bootstrap.sh` installs both Skill and Hooks; `install_codex_hooks.py` is Hooks-only); tools with no hook contract (gemini, etc.) see README "Cross-tool" section
+- The Codex desktop client may not expose a separate `codex` CLI to its shell. Version detection warns and continues by default; only an explicit `--strict-version-check` may block. Never describe "CLI absent from PATH" as proof that the current client lacks Hook support.
 
 
 ## Content Preservation Guarantees

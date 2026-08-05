@@ -134,9 +134,15 @@ Running `/rules-architect` in Claude Code or `$rules-architect` in Codex
 1. build a current-project inventory with `scripts/rule_inventory.py`;
 2. discover registered, orphaned, dangling, and locally modified hooks;
 3. choose a canonical body, delivery adapters, and enforcement mode;
-4. reconcile against private prior state as create/reuse/update/disable/delete/keep/review;
+4. resolve ambiguity first, then reconcile as create/reuse/update/disable/delete/keep;
 5. validate coverage, ownership, and fingerprint binding;
 6. render the five groups and actual hook health.
+
+Conflicts, low-confidence classifications, and ambiguous external artifacts
+are confirmed with the user before a final plan exists. No operations are
+allowed during that stage. Final recommendations contain resolved actions only
+(`create/reuse/move/update/disable/delete/keep`) and never use `review` as a
+result.
 
 The user still performs one Skill invocation. The current session's main agent
 supplies semantic classification; the Python tools only discover, validate,
@@ -150,6 +156,22 @@ existing `additionalContext` hooks are reminders.
 Repeated runs are intentional. Hooks produced by other tools are included in
 comparison but are never automatically modified. Applying remains read-only by
 default and requires an explicit `apply_reconciliation.py --yes` confirmation.
+The final menu supports all safe operations, selected operation IDs,
+create-only execution, plan adjustment, export, rescan, and exit. Updates,
+disables, and deletes receive a second confirmation before execution. Execution
+choices are hidden when no operation exists. Partial selection applies explicit
+independent operations and records only successful operations. Moves and
+unsupported document/memory writes remain manual rather than pretending to be
+transactional.
+
+Schema 1.2 covers every scanned occurrence, binds confirmed outcomes to the
+final target/group/enforcement/action, and cross-links final conclusions with
+operations. A report cannot say “keep” while an operation silently deletes the
+same artifact.
+Preview and apply use the same path/config/state/hash preflight; legacy schemas
+are view-only, and writes require a schema 1.2 ready plan. Automatic Hook writes
+also require a complete desired registration set and content markers bound to
+the final enforcement specification.
 
 Example output shape:
 
@@ -258,8 +280,15 @@ curl -fsSL https://raw.githubusercontent.com/langlanglanglanglang/rules-architec
 The following command installs Codex Hooks only; it does not install the Skill:
 
 ```bash
-python3 ~/.claude/skills/rules-architect/scripts/install_codex_hooks.py
+python3 ~/.agents/skills/rules-architect/scripts/install_codex_hooks.py
 ```
+
+Version detection is advisory by default. The Codex desktop client can run a
+Skill without exposing a separate `codex` executable to the current shell's
+`PATH`. A missing, failed, or older CLI therefore produces a warning and Hook
+installation continues; it does not prove that the client lacks Hook support.
+Use `--strict-version-check` when CI should fail, or `--skip-version-check` to
+omit detection entirely.
 
 It writes the same 3 self-contained hooks into `~/.codex/hooks/` and deep-merges
 into `~/.codex/hooks.json` (preserving existing entries). The installer handles

@@ -287,7 +287,7 @@ def extract_artifact_metadata(text):
     return {
         "rule_id": rule.group(1) if rule else None,
         "declared_owner": owner.group(1) if owner else None,
-        "generator": generator.group(1).strip() if generator else None,
+        "generator": generator.group(1).strip().rstrip(" -") if generator else None,
         "legacy_rules_architect_marker": legacy_ra,
     }
 
@@ -864,9 +864,23 @@ class InventoryBuilder:
             tokens = shlex.split(command, posix=(os.name != "nt"))
         except ValueError:
             return None
+        script_suffixes = {
+            ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+            ".js", ".mjs", ".cjs", ".rb", ".pl",
+        }
+        interpreters = {
+            "python", "python3", "bash", "sh", "zsh", "node", "ruby", "perl",
+            "uv", "env", "/usr/bin/env",
+        }
         for token in tokens:
-            if token.endswith(".py"):
-                return Path(token.strip("'\"")).expanduser()
+            value = os.path.expandvars(token.strip("'\""))
+            if not value or value.startswith("-") or value in interpreters:
+                continue
+            candidate = Path(value).expanduser()
+            if candidate.suffix.lower() in script_suffixes:
+                return candidate
+            if not candidate.suffix and ("/" in value or "\\" in value):
+                return candidate
         return None
 
     def _manifest_hook_files(self):
@@ -922,10 +936,13 @@ class InventoryBuilder:
             )
             managed_hash = manifest_entry.get("hash_sha256") if manifest_entry else None
             modified = bool(managed_hash and managed_hash != source["content_hash"])
+            metadata = extract_artifact_metadata(text)
             if manifest_entry:
                 ownership, evidence = "rules_architect", "manifest"
             elif owner_match and owner_match.group(1) == "rules-architect":
                 ownership, evidence = "rules_architect", "frontmatter_marker_untracked"
+            elif metadata.get("generator"):
+                ownership, evidence = "external_tool", "generator_marker"
             else:
                 ownership, evidence = "unknown", "none"
             artifacts.append({
@@ -946,7 +963,7 @@ class InventoryBuilder:
                 "managed_hash": managed_hash,
                 "modified_since_managed": modified,
                 "rule_id": (rule_match.group(1) if rule_match else None) or (manifest_entry or {}).get("rule_id"),
-                "generator": None,
+                "generator": metadata.get("generator"),
             })
         self.path_rule_artifacts = sorted(artifacts, key=lambda item: item["path"])
 
@@ -1000,7 +1017,16 @@ class InventoryBuilder:
             if not directory.is_dir():
                 continue
             try:
-                paths = sorted(directory.glob("*.py"))
+                paths = sorted(
+                    path for path in directory.iterdir()
+                    if path.is_file() and (
+                        path.suffix.lower() in {
+                            ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+                            ".js", ".mjs", ".cjs", ".rb", ".pl",
+                        }
+                        or (not path.suffix and os.access(str(path), os.X_OK))
+                    )
+                )
             except OSError as exc:
                 self.error(directory, "hook_dir_unreadable", str(exc))
                 continue
